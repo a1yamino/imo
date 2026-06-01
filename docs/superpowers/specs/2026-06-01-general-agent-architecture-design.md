@@ -4,7 +4,7 @@
 
 ## 背景
 
-当前项目是一个 Go 实现的 OpenAI 兼容多轮对话 Web 应用。目标是在此基础上设计一个通用自主任务 agent。第一版面向单用户本地运行，但架构必须保留未来升级为多用户服务端系统的能力。
+当前项目已经转向 Go 实现的通用 agent 管理员 Dashboard。目标是在此基础上实现一个通用自主任务 agent。第一版面向单用户本地运行，但架构必须保留未来升级为多用户服务端系统的能力。
 
 第一版 agent 支持文件系统和网页搜索两类工具。自主程度需要可配置，默认建议为中自主：低风险动作可自动执行，中高风险动作需要用户确认，高风险动作默认拒绝或不注册为工具。
 
@@ -96,7 +96,7 @@ All state changes -> Audit Log
 - 调用 Policy Engine。
 - 执行工具或进入等待审批。
 - 保存 step、tool call、observation 和 audit event。
-- 推送 SSE 事件给前端。
+- 产生 runtime event；Web 层通过 SSE 让管理员 Dashboard 观察这些事件。
 
 ### Agent Core
 
@@ -430,4 +430,4 @@ Dashboard 默认展示所有 agent 执行细节。
 - LLM 调用抽象为 `LLMClient`，第一版实现继续复用当前 OpenAI 兼容 Chat Completions 接口。
 - 网页搜索抽象为 `SearchProvider`，第一版通过配置选择具体 provider；业务代码只依赖统一搜索结果结构。
 - 文件修改同时支持 `write_file` 和 `patch_file`。`write_file` 适合新文件或完整覆盖，`patch_file` 适合局部修改；两者默认都需要 Policy 判断。
-- 管理员 Dashboard 优先实现 run 列表、时间线、工具调用详情、审批队列和审计日志；普通聊天体验不是第一版重点。
+- 管理员 Dashboard 优先实现 run 列表、时间线、工具调用详情、审批队列和审计日志；普通聊天页不保留。

@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Admin Dashboard</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --line: #d7dde5;
+      --text: #172033;
+      --muted: #667085;
+      --blue: #1f6feb;
+      --green: #16825d;
+      --amber: #9a6700;
+      --red: #b42318;
+      --ink: #24292f;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 300px minmax(420px, 1fr) 380px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    aside, main, .detail {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    main { background: #fbfcfe; }
+    .detail { border-right: 0; }
+
+    .section {
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      letter-spacing: 0;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 19px; }
+    h2 { font-size: 15px; margin-bottom: 12px; }
+    h3 { font-size: 14px; }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    label {
+      display: grid;
+      gap: 5px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: white;
+      color: var(--text);
+      font: inherit;
+      padding: 8px 10px;
+    }
+
+    textarea {
+      min-height: 96px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    button {
+      min-height: 38px;
+      border: 1px solid var(--blue);
+      border-radius: 6px;
+      background: var(--blue);
+      color: white;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 650;
+      padding: 0 12px;
+    }
+
+    button.secondary {
+      border-color: var(--line);
+      background: white;
+      color: var(--text);
+    }
+
+    .run-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .run-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 10px;
+    }
+
+    .run-item.active {
+      border-color: var(--blue);
+      box-shadow: inset 3px 0 0 var(--blue);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      border-radius: 999px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge.running { border-color: #8bb9ff; color: var(--blue); }
+    .badge.completed { border-color: #7bc6a4; color: var(--green); }
+    .badge.failed, .badge.blocked { border-color: #f0a7a0; color: var(--red); }
+    .badge.waiting_approval { border-color: #e7c46b; color: var(--amber); }
+
+    .timeline {
+      display: grid;
+      gap: 10px;
+    }
+
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: white;
+      padding: 12px;
+    }
+
+    pre {
+      margin: 8px 0 0;
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      background: #f7f8fa;
+      color: var(--ink);
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 6px 10px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .empty {
+      min-height: 180px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+      padding: 20px;
+    }
+
+    @media (max-width: 1100px) {
+      .shell {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
+      }
+
+      aside, main, .detail {
+        height: auto;
+        overflow: visible;
+        border-right: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="section">
+        <div class="row">
+          <h1>Agent Runs</h1>
+          <button id="refreshBtn" class="secondary" type="button">刷新</button>
+        </div>
+      </div>
+      <form id="createForm" class="section">
+        <h2>创建 Run</h2>
+        <label>
+          目标
+          <textarea id="goal" required>检查当前项目结构并记录观察结果</textarea>
+        </label>
+        <label>
+          自主等级
+          <select id="autonomy">
+            <option value="medium">medium</option>
+            <option value="low">low</option>
+            <option value="high">high</option>
+          </select>
+        </label>
+        <label>
+          Workspace Scope
+          <input id="workspaceScope" value=".">
+        </label>
+        <button type="submit">创建并运行</button>
+      </form>
+      <div class="section">
+        <h2>Run 列表</h2>
+        <div id="runList" class="run-list"></div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="section">
+        <div class="row">
+          <div>
+            <h1 id="selectedTitle">未选择 Run</h1>
+            <div id="selectedMeta" class="muted"></div>
+          </div>
+          <span id="selectedStatus" class="badge">idle</span>
+        </div>
+      </div>
+      <div class="section">
+        <h2>执行时间线</h2>
+        <div id="timeline" class="timeline">
+          <div class="empty">选择或创建一个 run</div>
+        </div>
+      </div>
+    </main>
+
+    <section class="detail">
+      <div class="section">
+        <h2>Run 配置</h2>
+        <div id="runConfig" class="kv"></div>
+      </div>
+      <div class="section">
+        <h2>工具执行结果</h2>
+        <div id="toolCalls" class="timeline"></div>
+      </div>
+      <div class="section">
+        <h2>审计事件</h2>
+        <div id="auditEvents" class="timeline"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const runListEl = document.getElementById("runList");
+    const timelineEl = document.getElementById("timeline");
+    const toolCallsEl = document.getElementById("toolCalls");
+    const auditEventsEl = document.getElementById("auditEvents");
+    const runConfigEl = document.getElementById("runConfig");
+    const selectedTitleEl = document.getElementById("selectedTitle");
+    const selectedMetaEl = document.getElementById("selectedMeta");
+    const selectedStatusEl = document.getElementById("selectedStatus");
+    const createFormEl = document.getElementById("createForm");
+    const refreshBtnEl = document.getElementById("refreshBtn");
+
+    let selectedRunId = "";
+    let eventSource = null;
+
+    async function requestJSON(url, options) {
+      const res = await fetch(url, options);
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      return res.json();
+    }
+
+    async function loadRuns() {
+      const data = await requestJSON("/api/runs");
+      renderRuns(data.runs || []);
+      if (!selectedRunId && data.runs && data.runs.length > 0) {
+        await selectRun(data.runs[0].id);
+      }
+    }
+
+    function renderRuns(runs) {
+      runListEl.innerHTML = "";
+      if (runs.length === 0) {
+        runListEl.innerHTML = '<div class="empty">暂无 run</div>';
+        return;
+      }
+      for (const run of runs) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "run-item" + (run.id === selectedRunId ? " active" : "");
+        button.innerHTML = `
+          <div class="row">
+            <strong>${escapeHTML(run.goal)}</strong>
+            <span class="badge ${run.status}">${run.status}</span>
+          </div>
+          <div class="muted">${run.autonomy_level} · ${new Date(run.updated_at).toLocaleString()}</div>
+        `;
+        button.addEventListener("click", () => selectRun(run.id));
+        runListEl.appendChild(button);
+      }
+    }
+
+    async function selectRun(runId) {
+      selectedRunId = runId;
+      if (eventSource) {
+        eventSource.close();
+      }
+      await loadSnapshot(runId);
+      eventSource = new EventSource(`/api/runs/${runId}/events`);
+      eventSource.onmessage = () => loadSnapshot(runId).then(loadRuns);
+    }
+
+    async function loadSnapshot(runId) {
+      const snapshot = await requestJSON(`/api/runs/${runId}`);
+      renderSnapshot(snapshot);
+    }
+
+    function renderSnapshot(snapshot) {
+      const run = snapshot.run;
+      selectedTitleEl.textContent = run.goal;
+      selectedMetaEl.textContent = `${run.id} · ${new Date(run.created_at).toLocaleString()}`;
+      selectedStatusEl.textContent = run.status;
+      selectedStatusEl.className = `badge ${run.status}`;
+
+      runConfigEl.innerHTML = `
+        <div>Autonomy</div><div>${escapeHTML(run.autonomy_level)}</div>
+        <div>Tools</div><div>${escapeHTML((run.enabled_tools || []).join(", ") || "none")}</div>
+        <div>Scope</div><div>${escapeHTML(run.workspace_scope)}</div>
+        <div>Owner</div><div>${escapeHTML(run.owner_id)}</div>
+      `;
+
+      renderSteps(snapshot.steps || []);
+      renderToolCalls(snapshot.tool_calls || []);
+      renderAudit(snapshot.audit_events || []);
+    }
+
+    function renderSteps(steps) {
+      timelineEl.innerHTML = "";
+      if (steps.length === 0) {
+        timelineEl.innerHTML = '<div class="empty">暂无步骤</div>';
+        return;
+      }
+      for (const step of steps) {
+        const item = document.createElement("div");
+        item.className = "item";
+        item.innerHTML = `
+          <div class="row">
+            <h3>#${step.index} ${escapeHTML(step.type)}</h3>
+            <span class="badge">${escapeHTML(step.status)}</span>
+          </div>
+          ${step.reasoning_summary ? `<p>${escapeHTML(step.reasoning_summary)}</p>` : ""}
+          ${step.observation ? `<pre>${escapeHTML(step.observation)}</pre>` : ""}
+          ${step.model_output ? `<pre>${escapeHTML(formatMaybeJSON(step.model_output))}</pre>` : ""}
+        `;
+        timelineEl.appendChild(item);
+      }
+    }
+
+    function renderToolCalls(calls) {
+      toolCallsEl.innerHTML = "";
+      if (calls.length === 0) {
+        toolCallsEl.innerHTML = '<div class="empty">暂无工具调用</div>';
+        return;
+      }
+      for (const call of calls) {
+        const item = document.createElement("div");
+        item.className = "item";
+        item.innerHTML = `
+          <div class="row">
+            <h3>${escapeHTML(call.tool_name)}</h3>
+            <span class="badge">${escapeHTML(call.policy_decision)}</span>
+          </div>
+          <div class="muted">${escapeHTML(call.risk_level)} · ${escapeHTML(call.status)}</div>
+          <pre>${escapeHTML(formatMaybeJSON(call.arguments_json))}</pre>
+          <pre>${escapeHTML(formatMaybeJSON(call.result_json || call.error || ""))}</pre>
+        `;
+        toolCallsEl.appendChild(item);
+      }
+    }
+
+    function renderAudit(events) {
+      auditEventsEl.innerHTML = "";
+      if (events.length === 0) {
+        auditEventsEl.innerHTML = '<div class="empty">暂无审计事件</div>';
+        return;
+      }
+      for (const event of events) {
+        const item = document.createElement("div");
+        item.className = "item";
+        item.innerHTML = `
+          <div class="row">
+            <h3>${escapeHTML(event.action)}</h3>
+            <span class="badge">${escapeHTML(event.actor)}</span>
+          </div>
+          <div class="muted">${new Date(event.created_at).toLocaleString()}</div>
+          <pre>${escapeHTML(formatMaybeJSON(event.payload_json))}</pre>
+        `;
+        auditEventsEl.appendChild(item);
+      }
+    }
+
+    function formatMaybeJSON(value) {
+      try {
+        return JSON.stringify(JSON.parse(value), null, 2);
+      } catch {
+        return value;
+      }
+    }
+
+    function escapeHTML(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    createFormEl.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const run = await requestJSON("/api/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goal: document.getElementById("goal").value.trim(),
+          autonomy_level: document.getElementById("autonomy").value,
+          workspace_scope: document.getElementById("workspaceScope").value.trim() || ".",
+          enabled_tools: ["filesystem.list_dir", "web.search"]
+        })
+      });
+      await loadRuns();
+      await selectRun(run.id);
+    });
+
+    refreshBtnEl.addEventListener("click", loadRuns);
+    loadRuns();
+  </script>
+</body>
+</html>

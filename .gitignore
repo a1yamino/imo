@@ -1,1 +1,6 @@
 .superpowers/
+agent.db
+agent.db-*
+/imo
+
+.env
