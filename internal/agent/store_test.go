@@ -86,3 +86,39 @@ func TestSQLiteAgentStorePersistsRunSnapshot(t *testing.T) {
 		t.Fatalf("audit events=%d, want 1", len(snapshot.AuditEvents))
 	}
 }
+
+func TestSQLiteAgentStoreListsRunsBySession(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	first, err := store.CreateRun(ctx, CreateRunRequest{Goal: "first"})
+	if err != nil {
+		t.Fatalf("CreateRun first: %v", err)
+	}
+	second, err := store.CreateRun(ctx, CreateRunRequest{SessionID: first.SessionID, Goal: "second"})
+	if err != nil {
+		t.Fatalf("CreateRun second: %v", err)
+	}
+	other, err := store.CreateRun(ctx, CreateRunRequest{Goal: "other"})
+	if err != nil {
+		t.Fatalf("CreateRun other: %v", err)
+	}
+
+	runs, err := store.ListRunsBySession(ctx, first.SessionID)
+	if err != nil {
+		t.Fatalf("ListRunsBySession: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("runs=%d, want 2", len(runs))
+	}
+	if runs[0].ID != first.ID || runs[1].ID != second.ID {
+		t.Fatalf("runs order=%v, want first then second", []string{runs[0].ID, runs[1].ID})
+	}
+	if runs[0].SessionID == other.SessionID {
+		t.Fatal("session filter included an unrelated run")
+	}
+}

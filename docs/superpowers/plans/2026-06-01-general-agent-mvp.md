@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a runnable single-user general agent MVP with SQLite persistence, a command-driven mock runtime, runtime events, and an admin dashboard showing run details.
+**Goal:** Build a runnable single-user general agent MVP with SQLite persistence, a command-driven AI conversation runtime, runtime events, and an admin dashboard showing run details.
 
-**Architecture:** Keep the existing Go web server, but split the agent runtime into focused files: model types, SQLite store, policy engine, run service, API handlers, and admin UI. The first runtime consumes commands and uses a mock agent loop so lifecycle, events, audit, and dashboard behavior work before real filesystem or web-search tools are connected.
+**Architecture:** Keep the existing Go web server, but split the agent runtime into focused files: model types, SQLite store, policy engine, LLM client, run service, API handlers, and admin UI. The first runtime consumes commands and calls an OpenAI-compatible chat completion model for ordinary AI conversation.
 
 **Tech Stack:** Go `net/http`, `database/sql`, `modernc.org/sqlite`, server-sent events, embedded HTML/CSS/JS.
 
@@ -16,7 +16,8 @@
 - `internal/agent/types.go`: shared run, step, tool call, audit, policy, and event types.
 - `internal/agent/store.go`: SQLite schema, persistence methods, list/detail queries.
 - `internal/agent/policy.go`: autonomy/risk policy decisions.
-- `internal/agent/service.go`: create runs, consume runtime commands, execute mock loop, publish runtime events, expose snapshots.
+- `internal/agent/service.go`: create runs, consume runtime commands, execute AI conversation runs, publish runtime events, expose snapshots.
+- `internal/agent/llm.go`: OpenAI-compatible chat completion client.
 - `internal/webapp/server.go`: config loading, route registration, and static embeds.
 - `internal/webapp/agent_api.go`: `/api/runs`, `/api/runs/{id}`, `/api/runs/{id}/events`, `/api/runs/{id}/steps`, `/api/runs/{id}/tool-calls`, `/api/runs/{id}/audit-events`.
 - `internal/webapp/assets/agent_admin.html`: admin dashboard UI.
@@ -109,6 +110,7 @@ Add `modernc.org/sqlite` to `go.mod`. Implement schema creation and methods:
 - `CreateRun`
 - `GetRun`
 - `ListRuns`
+- `ListRunsBySession`
 - `UpdateRunStatus`
 - `AppendStep`
 - `SaveToolCall`
@@ -121,7 +123,7 @@ Run: `go test ./...`
 
 Expected: PASS.
 
-## Task 3: Run Service Mock Loop
+## Task 3: Run Service AI Conversation Loop
 
 **Files:**
 - Create: `internal/agent/service_test.go`
@@ -129,7 +131,7 @@ Expected: PASS.
 
 - [ ] **Step 1: Write failing run service tests**
 
-Create `internal/agent/service_test.go` to verify `CreateRun` persists a queued run, `StartRun` eventually completes it, and the snapshot contains mock decision, tool call, and audit data.
+Create `internal/agent/service_test.go` to verify `CreateRun` persists a queued run, `StartRun` eventually completes it, and the snapshot contains one AI response step plus audit data.
 
 - [ ] **Step 2: Run RED**
 
@@ -139,13 +141,13 @@ Expected: FAIL because `RunService` is undefined.
 
 - [ ] **Step 3: Implement RunService**
 
-Implement `RunService` with an in-process event broker and deterministic mock loop:
+Implement `RunService` with an in-process command consumer and AI conversation loop:
 
 1. status `queued`
 2. status `running`
-3. planning step with `reasoning_summary`
-4. mock `filesystem.list_dir` tool call
-5. observation step
+3. load prior completed runs in the same `session_id`
+4. call `LLMClient.Complete`
+5. response step with model input/output
 6. status `completed`
 
 - [ ] **Step 4: Run GREEN**
@@ -196,7 +198,7 @@ Expected: PASS.
 
 - [ ] **Step 1: Write MVP docs**
 
-Document how to run the app, open `/admin`, create a mock run, inspect timeline/tool/audit details, and configure `AGENT_DB_PATH`.
+Document how to run the app, open `/admin`, create an AI conversation run, inspect timeline/tool/audit details, and configure `AGENT_DB_PATH` plus OpenAI-compatible model settings.
 
 - [ ] **Step 2: Final verification**
 

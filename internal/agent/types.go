@@ -1,6 +1,9 @@
 package agent
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // AutonomyLevel is a policy input, not an execution mode baked into tools.
 // Keeping it here lets the same run loop support low/medium/high behavior
@@ -88,6 +91,27 @@ const (
 	ToolCallFailed    ToolCallStatus = "failed"
 )
 
+// LLMMessage is the model-facing conversation unit. The runtime builds these
+// from durable runs so a session can span multiple independent executions.
+type LLMMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type LLMRequest struct {
+	SystemPrompt string
+	UserPrompt   string
+	Messages     []LLMMessage
+}
+
+type LLMResponse struct {
+	Content string
+}
+
+type LLMClient interface {
+	Complete(context.Context, LLMRequest) (LLMResponse, error)
+}
+
 // RuntimeCommand is an instruction consumed by the agent runtime. HTTP handlers
 // should submit commands; they should not drive the runtime loop directly.
 type RuntimeCommand struct {
@@ -108,8 +132,6 @@ type RuntimeEventType string
 const (
 	RuntimeEventRunCreated       RuntimeEventType = "run_created"
 	RuntimeEventRunStatusChanged RuntimeEventType = "run_status_changed"
-	RuntimeEventModelDecision    RuntimeEventType = "model_decision"
-	RuntimeEventToolCallFinished RuntimeEventType = "tool_call_finished"
 	RuntimeEventStepFinished     RuntimeEventType = "step_finished"
 	RuntimeEventRunCompleted     RuntimeEventType = "run_completed"
 	RuntimeEventRunFailed        RuntimeEventType = "run_failed"
@@ -204,6 +226,13 @@ type RunSnapshot struct {
 	Artifacts   []Artifact   `json:"artifacts"`
 }
 
+// SessionSnapshot is the read model for a multi-turn conversation. Each user
+// turn is still a separate run, but all runs in one session form the chat state.
+type SessionSnapshot struct {
+	SessionID string        `json:"session_id"`
+	Runs      []RunSnapshot `json:"runs"`
+}
+
 // RuntimeEvent is the runtime's domain event envelope. The dashboard observes
 // these events, but the names are intentionally runtime-first rather than UI-first.
 type RuntimeEvent struct {
@@ -215,6 +244,7 @@ type RuntimeEvent struct {
 // CreateRunRequest is shared by the HTTP API and store layer. Tool and scope
 // fields are part of the run config so future Policy decisions can be replayed.
 type CreateRunRequest struct {
+	SessionID      string        `json:"session_id,omitempty"`
 	Goal           string        `json:"goal"`
 	Autonomy       AutonomyLevel `json:"autonomy_level"`
 	EnabledTools   []string      `json:"enabled_tools"`

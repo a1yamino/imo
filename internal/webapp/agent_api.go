@@ -87,6 +87,24 @@ func (s *server) runResource(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *server) sessionResource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sessionID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/sessions/"), "/")
+	if sessionID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	snapshot, err := s.runService.SessionSnapshot(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, snapshot)
+}
+
 func (s *server) snapshotPart(w http.ResponseWriter, r *http.Request, runID string, part string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

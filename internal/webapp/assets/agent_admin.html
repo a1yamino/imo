@@ -47,6 +47,13 @@
     main { background: #fbfcfe; }
     .detail { border-right: 0; }
 
+    .workspace {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 0;
+      overflow: hidden;
+    }
+
     .section {
       padding: 16px;
       border-bottom: 1px solid var(--line);
@@ -93,6 +100,12 @@
       line-height: 1.45;
     }
 
+    .chat-input {
+      min-height: 52px;
+      max-height: 160px;
+      resize: vertical;
+    }
+
     button {
       min-height: 38px;
       border: 1px solid var(--blue);
@@ -131,6 +144,58 @@
       box-shadow: inset 3px 0 0 var(--blue);
     }
 
+    .session-group {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: white;
+      overflow: hidden;
+    }
+
+    .session-head {
+      display: grid;
+      grid-template-columns: 30px 1fr;
+      align-items: stretch;
+      gap: 6px;
+      padding: 8px;
+    }
+
+    .session-button {
+      width: 100%;
+      min-height: 0;
+      text-align: left;
+      border: 0;
+      border-radius: 4px;
+      background: white;
+      color: var(--text);
+      padding: 2px;
+    }
+
+    .session-button.active {
+      box-shadow: inset 3px 0 0 var(--blue);
+    }
+
+    .toggle-session {
+      width: 28px;
+      min-height: 28px;
+      border-color: var(--line);
+      background: white;
+      color: var(--muted);
+      padding: 0;
+    }
+
+    .session-runs {
+      display: grid;
+      gap: 6px;
+      padding: 0 8px 8px 18px;
+      border-top: 1px solid #eef1f5;
+    }
+
+    .session-runs .run-item {
+      border-radius: 5px;
+      padding: 8px;
+      font-size: 13px;
+    }
+
     .row {
       display: flex;
       align-items: center;
@@ -161,11 +226,45 @@
       gap: 10px;
     }
 
+    .conversation {
+      overflow: auto;
+      min-height: 0;
+      padding: 16px;
+    }
+
+    .composer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: end;
+      padding: 16px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+    }
+
     .item {
       border: 1px solid var(--line);
       border-radius: 6px;
       background: white;
       padding: 12px;
+    }
+
+    .message {
+      max-width: 780px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: white;
+      padding: 12px;
+    }
+
+    .message.user {
+      margin-left: auto;
+      border-color: #b8d3ff;
+      background: #eef5ff;
+    }
+
+    .message.assistant {
+      margin-right: auto;
     }
 
     pre {
@@ -212,6 +311,14 @@
         overflow: visible;
         border-right: 0;
       }
+
+      .workspace {
+        min-height: 70vh;
+      }
+
+      .composer {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -224,12 +331,8 @@
           <button id="refreshBtn" class="secondary" type="button">刷新</button>
         </div>
       </div>
-      <form id="createForm" class="section">
-        <h2>创建 Run</h2>
-        <label>
-          目标
-          <textarea id="goal" required>检查当前项目结构并记录观察结果</textarea>
-        </label>
+      <div class="section">
+        <h2>运行设置</h2>
         <label>
           自主等级
           <select id="autonomy">
@@ -242,30 +345,35 @@
           Workspace Scope
           <input id="workspaceScope" value=".">
         </label>
-        <button type="submit">创建并运行</button>
-      </form>
+      </div>
       <div class="section">
         <h2>Run 列表</h2>
         <div id="runList" class="run-list"></div>
       </div>
     </aside>
 
-    <main>
+    <main class="workspace">
       <div class="section">
         <div class="row">
           <div>
-            <h1 id="selectedTitle">未选择 Run</h1>
+            <h1 id="selectedTitle">新对话</h1>
             <div id="selectedMeta" class="muted"></div>
           </div>
-          <span id="selectedStatus" class="badge">idle</span>
+          <div class="row">
+            <button id="newChatBtn" class="secondary" type="button">新对话</button>
+            <span id="selectedStatus" class="badge">idle</span>
+          </div>
         </div>
       </div>
-      <div class="section">
-        <h2>执行时间线</h2>
+      <div class="conversation">
         <div id="timeline" class="timeline">
-          <div class="empty">选择或创建一个 run</div>
+          <div class="empty">输入消息开始多轮对话</div>
         </div>
       </div>
+      <form id="chatForm" class="composer">
+        <textarea id="chatInput" class="chat-input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" required></textarea>
+        <button id="sendBtn" type="submit">发送</button>
+      </form>
     </main>
 
     <section class="detail">
@@ -293,10 +401,17 @@
     const selectedTitleEl = document.getElementById("selectedTitle");
     const selectedMetaEl = document.getElementById("selectedMeta");
     const selectedStatusEl = document.getElementById("selectedStatus");
-    const createFormEl = document.getElementById("createForm");
+    const chatFormEl = document.getElementById("chatForm");
+    const chatInputEl = document.getElementById("chatInput");
+    const sendBtnEl = document.getElementById("sendBtn");
     const refreshBtnEl = document.getElementById("refreshBtn");
+    const newChatBtnEl = document.getElementById("newChatBtn");
 
     let selectedRunId = "";
+    let selectedSessionId = "";
+    let autoSelectLatest = true;
+    let currentRuns = [];
+    const collapsedSessions = new Set();
     let eventSource = null;
 
     async function requestJSON(url, options) {
@@ -309,9 +424,10 @@
 
     async function loadRuns() {
       const data = await requestJSON("/api/runs");
-      renderRuns(data.runs || []);
-      if (!selectedRunId && data.runs && data.runs.length > 0) {
-        await selectRun(data.runs[0].id);
+      currentRuns = data.runs || [];
+      renderRuns(currentRuns);
+      if (autoSelectLatest && !selectedRunId && currentRuns.length > 0) {
+        await selectRun(currentRuns[0].id);
       }
     }
 
@@ -321,24 +437,89 @@
         runListEl.innerHTML = '<div class="empty">暂无 run</div>';
         return;
       }
-      for (const run of runs) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "run-item" + (run.id === selectedRunId ? " active" : "");
-        button.innerHTML = `
+      for (const session of groupRunsBySession(runs)) {
+        const group = document.createElement("div");
+        group.className = "session-group";
+        const isCollapsed = collapsedSessions.has(session.id);
+
+        const sessionButton = document.createElement("button");
+        sessionButton.type = "button";
+        sessionButton.className = "session-button" + (session.id === selectedSessionId ? " active" : "");
+        sessionButton.innerHTML = `
           <div class="row">
-            <strong>${escapeHTML(run.goal)}</strong>
-            <span class="badge ${run.status}">${run.status}</span>
+            <strong>${escapeHTML(session.title)}</strong>
+            <span class="badge ${session.latest.status}">${escapeHTML(session.latest.status)}</span>
           </div>
-          <div class="muted">${run.autonomy_level} · ${new Date(run.updated_at).toLocaleString()}</div>
+          <div class="muted">${session.runs.length} runs · ${new Date(session.latest.updated_at).toLocaleString()}</div>
         `;
-        button.addEventListener("click", () => selectRun(run.id));
-        runListEl.appendChild(button);
+        sessionButton.addEventListener("click", () => selectRun(session.latest.id));
+
+        const toggleButton = document.createElement("button");
+        toggleButton.className = "toggle-session";
+        toggleButton.type = "button";
+        toggleButton.setAttribute("aria-label", isCollapsed ? "展开对话" : "收起对话");
+        toggleButton.setAttribute("aria-expanded", String(!isCollapsed));
+        toggleButton.textContent = isCollapsed ? "▸" : "▾";
+        toggleButton.addEventListener("click", () => toggleSession(session.id));
+
+        const head = document.createElement("div");
+        head.className = "session-head";
+        head.appendChild(toggleButton);
+        head.appendChild(sessionButton);
+        group.appendChild(head);
+
+        if (!isCollapsed) {
+          const runItems = document.createElement("div");
+          runItems.className = "session-runs";
+          for (const run of session.runs) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "run-item" + (run.id === selectedRunId ? " active" : "");
+            button.innerHTML = `
+              <div class="row">
+                <span>${escapeHTML(shortText(run.goal, 34))}</span>
+                <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
+              </div>
+              <div class="muted">${new Date(run.created_at).toLocaleString()}</div>
+            `;
+            button.addEventListener("click", () => selectRun(run.id));
+            runItems.appendChild(button);
+          }
+          group.appendChild(runItems);
+        }
+        runListEl.appendChild(group);
       }
+    }
+
+    function toggleSession(sessionId) {
+      if (collapsedSessions.has(sessionId)) {
+        collapsedSessions.delete(sessionId);
+      } else {
+        collapsedSessions.add(sessionId);
+      }
+      renderRuns(currentRuns);
+    }
+
+    function groupRunsBySession(runs) {
+      const sessions = new Map();
+      for (const run of runs) {
+        const sessionId = run.session_id || run.id;
+        if (!sessions.has(sessionId)) {
+          sessions.set(sessionId, { id: sessionId, runs: [] });
+        }
+        sessions.get(sessionId).runs.push(run);
+      }
+      return [...sessions.values()].map((session) => {
+        session.runs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        session.latest = [...session.runs].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+        session.title = session.runs[0]?.goal || "未命名对话";
+        return session;
+      }).sort((a, b) => new Date(b.latest.updated_at) - new Date(a.latest.updated_at));
     }
 
     async function selectRun(runId) {
       selectedRunId = runId;
+      autoSelectLatest = true;
       if (eventSource) {
         eventSource.close();
       }
@@ -350,12 +531,22 @@
     async function loadSnapshot(runId) {
       const snapshot = await requestJSON(`/api/runs/${runId}`);
       renderSnapshot(snapshot);
+      if (snapshot.run && snapshot.run.session_id) {
+        await loadSession(snapshot.run.session_id);
+      }
+    }
+
+    async function loadSession(sessionId) {
+      const snapshot = await requestJSON(`/api/sessions/${sessionId}`);
+      selectedSessionId = snapshot.session_id;
+      renderSession(snapshot);
     }
 
     function renderSnapshot(snapshot) {
       const run = snapshot.run;
+      selectedSessionId = run.session_id;
       selectedTitleEl.textContent = run.goal;
-      selectedMetaEl.textContent = `${run.id} · ${new Date(run.created_at).toLocaleString()}`;
+      selectedMetaEl.textContent = `session ${run.session_id} · run ${run.id} · ${new Date(run.created_at).toLocaleString()}`;
       selectedStatusEl.textContent = run.status;
       selectedStatusEl.className = `badge ${run.status}`;
 
@@ -364,33 +555,63 @@
         <div>Tools</div><div>${escapeHTML((run.enabled_tools || []).join(", ") || "none")}</div>
         <div>Scope</div><div>${escapeHTML(run.workspace_scope)}</div>
         <div>Owner</div><div>${escapeHTML(run.owner_id)}</div>
+        <div>Session</div><div>${escapeHTML(run.session_id)}</div>
       `;
 
-      renderSteps(snapshot.steps || []);
       renderToolCalls(snapshot.tool_calls || []);
       renderAudit(snapshot.audit_events || []);
     }
 
-    function renderSteps(steps) {
+    function renderSession(snapshot) {
       timelineEl.innerHTML = "";
-      if (steps.length === 0) {
-        timelineEl.innerHTML = '<div class="empty">暂无步骤</div>';
+      const runs = snapshot.runs || [];
+      if (runs.length === 0) {
+        timelineEl.innerHTML = '<div class="empty">输入消息开始多轮对话</div>';
         return;
       }
-      for (const step of steps) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.innerHTML = `
-          <div class="row">
-            <h3>#${step.index} ${escapeHTML(step.type)}</h3>
-            <span class="badge">${escapeHTML(step.status)}</span>
-          </div>
-          ${step.reasoning_summary ? `<p>${escapeHTML(step.reasoning_summary)}</p>` : ""}
-          ${step.observation ? `<pre>${escapeHTML(step.observation)}</pre>` : ""}
-          ${step.model_output ? `<pre>${escapeHTML(formatMaybeJSON(step.model_output))}</pre>` : ""}
-        `;
-        timelineEl.appendChild(item);
+      for (const item of runs) {
+        const run = item.run;
+        const user = document.createElement("div");
+        user.className = "message user";
+        user.textContent = run.goal;
+        timelineEl.appendChild(user);
+
+        const answer = latestResponse(item.steps || []);
+        if (answer) {
+          const assistant = document.createElement("div");
+          assistant.className = "message assistant";
+          assistant.innerHTML = `
+            <div class="row">
+              <h3>assistant</h3>
+              <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
+            </div>
+            ${answer.reasoning_summary ? `<p class="muted">${escapeHTML(answer.reasoning_summary)}</p>` : ""}
+            <pre>${escapeHTML(formatMaybeJSON(answer.model_output))}</pre>
+          `;
+          timelineEl.appendChild(assistant);
+        } else {
+          const pending = document.createElement("div");
+          pending.className = "message assistant";
+          pending.innerHTML = `
+            <div class="row">
+              <h3>assistant</h3>
+              <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
+            </div>
+            <p class="muted">等待 AI 回复</p>
+          `;
+          timelineEl.appendChild(pending);
+        }
       }
+      timelineEl.scrollIntoView({ block: "end" });
+    }
+
+    function latestResponse(steps) {
+      for (let i = steps.length - 1; i >= 0; i -= 1) {
+        if (steps[i].type === "response" && steps[i].model_output) {
+          return steps[i];
+        }
+      }
+      return null;
     }
 
     function renderToolCalls(calls) {
@@ -452,24 +673,67 @@
         .replaceAll('"', "&quot;");
     }
 
-    createFormEl.addEventListener("submit", async (event) => {
+    function shortText(value, length) {
+      const text = String(value || "");
+      return text.length > length ? text.slice(0, length - 1) + "…" : text;
+    }
+
+    chatFormEl.addEventListener("submit", async (event) => {
       event.preventDefault();
+      const content = chatInputEl.value.trim();
+      if (!content || sendBtnEl.disabled) {
+        return;
+      }
+      sendBtnEl.disabled = true;
       const run = await requestJSON("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          goal: document.getElementById("goal").value.trim(),
+          goal: content,
+          session_id: selectedSessionId || "",
           autonomy_level: document.getElementById("autonomy").value,
           workspace_scope: document.getElementById("workspaceScope").value.trim() || ".",
-          enabled_tools: ["filesystem.list_dir", "web.search"]
+          enabled_tools: []
         })
+      }).finally(() => {
+        sendBtnEl.disabled = false;
       });
-      await loadRuns();
+      chatInputEl.value = "";
       await selectRun(run.id);
+      await loadRuns();
+    });
+
+    function resetConversation() {
+      selectedRunId = "";
+      selectedSessionId = "";
+      autoSelectLatest = false;
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      selectedTitleEl.textContent = "新对话";
+      selectedMetaEl.textContent = "";
+      selectedStatusEl.textContent = "idle";
+      selectedStatusEl.className = "badge";
+      runConfigEl.innerHTML = "";
+      toolCallsEl.innerHTML = '<div class="empty">暂无工具调用</div>';
+      auditEventsEl.innerHTML = '<div class="empty">暂无审计事件</div>';
+      timelineEl.innerHTML = '<div class="empty">输入消息开始多轮对话</div>';
+      renderRuns(currentRuns);
+      chatInputEl.focus();
+    }
+
+    chatInputEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        chatFormEl.requestSubmit();
+      }
     });
 
     refreshBtnEl.addEventListener("click", loadRuns);
+    newChatBtnEl.addEventListener("click", resetConversation);
     loadRuns();
+    chatInputEl.focus();
   </script>
 </body>
 </html>

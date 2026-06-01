@@ -8,7 +8,7 @@
 
 第一版 agent 支持文件系统和网页搜索两类工具。自主程度需要可配置，默认建议为中自主：低风险动作可自动执行，中高风险动作需要用户确认，高风险动作默认拒绝或不注册为工具。
 
-前端默认不是普通聊天页，而是管理员 Dashboard。管理员可以看到所有 agent run 的状态、步骤、决策摘要、工具调用参数、工具执行结果、审批记录、产物和审计事件。
+前端默认不是普通聊天页，而是管理员 Dashboard。管理员可以看到所有 agent run 的状态、步骤、AI 回复、决策摘要、工具调用参数、工具执行结果、审批记录、产物和审计事件。
 
 ## 目标
 
@@ -234,8 +234,8 @@ build context
 
 ```text
 owners        未来多用户边界；单用户版固定 default owner
-sessions      一组对话或任务集合
-runs          一次 agent 任务执行
+sessions      一组多轮对话或任务集合
+runs          一次 agent 任务执行；在对话模式下一次用户发言对应一个 run
 steps         agent loop 的每一步
 tool_calls    工具调用意图、参数、结果、policy 决策
 approvals     用户确认记录

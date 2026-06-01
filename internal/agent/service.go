@@ -11,6 +11,7 @@ type AgentStore interface {
 	CreateRun(context.Context, CreateRunRequest) (Run, error)
 	GetRun(context.Context, string) (Run, error)
 	ListRuns(context.Context) ([]Run, error)
+	ListRunsBySession(context.Context, string) ([]Run, error)
 	UpdateRunStatus(context.Context, string, RunStatus) error
 	AppendStep(context.Context, Step) (Step, error)
 	SaveToolCall(context.Context, ToolCall) (ToolCall, error)
@@ -24,6 +25,7 @@ type AgentStore interface {
 type RunService struct {
 	store  AgentStore
 	policy PolicyEngine
+	llm    LLMClient
 
 	commands chan RuntimeCommand
 
@@ -31,10 +33,11 @@ type RunService struct {
 	observers map[string]map[chan RuntimeEvent]struct{}
 }
 
-func NewRunService(store AgentStore, policy PolicyEngine) *RunService {
+func NewRunService(store AgentStore, policy PolicyEngine, llm LLMClient) *RunService {
 	service := &RunService{
 		store:     store,
 		policy:    policy,
+		llm:       llm,
 		commands:  make(chan RuntimeCommand, 64),
 		observers: make(map[string]map[chan RuntimeEvent]struct{}),
 	}
@@ -80,6 +83,22 @@ func (s *RunService) Snapshot(ctx context.Context, runID string) (RunSnapshot, e
 	return s.store.RunSnapshot(ctx, runID)
 }
 
+func (s *RunService) SessionSnapshot(ctx context.Context, sessionID string) (SessionSnapshot, error) {
+	runs, err := s.store.ListRunsBySession(ctx, sessionID)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	snapshots := make([]RunSnapshot, 0, len(runs))
+	for _, run := range runs {
+		snapshot, err := s.store.RunSnapshot(ctx, run.ID)
+		if err != nil {
+			return SessionSnapshot{}, err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return SessionSnapshot{SessionID: sessionID, Runs: snapshots}, nil
+}
+
 func (s *RunService) SubmitCommand(ctx context.Context, command RuntimeCommand) error {
 	select {
 	case s.commands <- command:
@@ -121,12 +140,12 @@ func (s *RunService) runtimeLoop() {
 	for command := range s.commands {
 		switch command.Type {
 		case RuntimeCommandStartRun:
-			s.executeMockRun(context.Background(), command.RunID)
+			s.executeConversationRun(context.Background(), command.RunID)
 		}
 	}
 }
 
-func (s *RunService) executeMockRun(ctx context.Context, runID string) {
+func (s *RunService) executeConversationRun(ctx context.Context, runID string) {
 	run, err := s.store.GetRun(ctx, runID)
 	if err != nil {
 		s.failRun(ctx, runID, err)
@@ -147,77 +166,29 @@ func (s *RunService) executeMockRun(ctx context.Context, runID string) {
 		Payload: "{}",
 	})
 
-	// This deterministic decision is the MVP stand-in for AgentCore. It exercises
-	// the same persistence and dashboard path that future LLM decisions will use.
-	decision := map[string]any{
-		"type":              "call_tool",
-		"reasoning_summary": "需要先查看工作区顶层文件，建立任务上下文。",
-		"tool_name":         "filesystem.list_dir",
-		"arguments":         map[string]any{"path": run.WorkspaceScope},
+	if s.llm == nil {
+		s.failRun(ctx, runID, errors.New("llm client is not configured"))
+		return
 	}
-	decisionJSON := mustJSON(decision)
-	step, err := s.store.AppendStep(ctx, Step{
-		RunID:            runID,
-		Index:            1,
-		Type:             StepModelDecision,
-		Status:           StepCompleted,
-		ModelInput:       run.Goal,
-		ModelOutput:      decisionJSON,
-		ReasoningSummary: "需要先查看工作区顶层文件，建立任务上下文。",
-	})
+	messages, err := s.conversationMessages(ctx, run)
 	if err != nil {
 		s.failRun(ctx, runID, err)
 		return
 	}
-	s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventModelDecision, RunID: runID, Data: step})
-
-	// Keep Policy in the loop even for mock data so approval/deny behavior can
-	// replace this tool call without changing RunService's outer flow.
-	policy := s.policy.Evaluate(PolicyRequest{Autonomy: run.Autonomy, Risk: RiskLow, ToolName: "filesystem.list_dir"})
-	call, err := s.store.SaveToolCall(ctx, ToolCall{
-		RunID:          runID,
-		StepID:         step.ID,
-		ToolName:       "filesystem.list_dir",
-		ArgumentsJSON:  mustJSON(map[string]any{"path": run.WorkspaceScope}),
-		RiskLevel:      RiskLow,
-		PolicyDecision: policy.Type,
-		ApprovalStatus: "not_required",
-		Status:         ToolCallCompleted,
-		ResultJSON:     mustJSON(map[string]any{"entries": []string{"main.go", "internal/", "docs/"}}),
-	})
+	reply, err := s.llm.Complete(ctx, LLMRequest{Messages: messages})
 	if err != nil {
 		s.failRun(ctx, runID, err)
 		return
 	}
-	s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventToolCallFinished, RunID: runID, Data: call})
-	_ = s.store.SaveAuditEvent(ctx, AuditEvent{
-		OwnerID: run.OwnerID,
-		RunID:   runID,
-		Actor:   "agent",
-		Action:  "tool_call_finished",
-		Payload: mustJSON(map[string]any{"tool_name": call.ToolName, "policy_decision": call.PolicyDecision}),
-	})
-
-	observation, err := s.store.AppendStep(ctx, Step{
-		RunID:       runID,
-		Index:       2,
-		Type:        StepObservation,
-		Status:      StepCompleted,
-		Observation: "filesystem.list_dir 返回 main.go、internal/、docs/，说明当前是一个分层后的 Go Web 项目。",
-	})
-	if err != nil {
-		s.failRun(ctx, runID, err)
-		return
-	}
-	s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: runID, Data: observation})
 
 	response, err := s.store.AppendStep(ctx, Step{
 		RunID:            runID,
-		Index:            3,
+		Index:            1,
 		Type:             StepResponse,
 		Status:           StepCompleted,
-		ReasoningSummary: "已完成第一轮环境观察，MVP mock run 到此结束。",
-		ModelOutput:      "Mock run completed. The agent inspected the workspace and recorded the result.",
+		ModelInput:       run.Goal,
+		ModelOutput:      reply.Content,
+		ReasoningSummary: "普通 AI 对话回复。",
 	})
 	if err != nil {
 		s.failRun(ctx, runID, err)
@@ -233,11 +204,57 @@ func (s *RunService) executeMockRun(ctx context.Context, runID string) {
 	_ = s.store.SaveAuditEvent(ctx, AuditEvent{
 		OwnerID: run.OwnerID,
 		RunID:   runID,
+		Actor:   "agent",
+		Action:  "llm_response_created",
+		Payload: mustJSON(map[string]any{"step_id": response.ID}),
+	})
+	_ = s.store.SaveAuditEvent(ctx, AuditEvent{
+		OwnerID: run.OwnerID,
+		RunID:   runID,
 		Actor:   "system",
 		Action:  "run_completed",
 		Payload: "{}",
 	})
 	s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventRunCompleted, RunID: runID, Data: completed})
+}
+
+func (s *RunService) conversationMessages(ctx context.Context, run Run) ([]LLMMessage, error) {
+	messages := []LLMMessage{{Role: "system", Content: "You are a helpful assistant."}}
+	runs, err := s.store.ListRunsBySession(ctx, run.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	for _, previous := range runs {
+		if previous.ID == run.ID {
+			continue
+		}
+		if previous.CreatedAt.After(run.CreatedAt) {
+			continue
+		}
+		snapshot, err := s.store.RunSnapshot(ctx, previous.ID)
+		if err != nil {
+			return nil, err
+		}
+		answer := latestAssistantMessage(snapshot.Steps)
+		if answer == "" {
+			continue
+		}
+		messages = append(messages,
+			LLMMessage{Role: "user", Content: previous.Goal},
+			LLMMessage{Role: "assistant", Content: answer},
+		)
+	}
+	messages = append(messages, LLMMessage{Role: "user", Content: run.Goal})
+	return messages, nil
+}
+
+func latestAssistantMessage(steps []Step) string {
+	for i := len(steps) - 1; i >= 0; i-- {
+		if steps[i].Type == StepResponse && steps[i].ModelOutput != "" {
+			return steps[i].ModelOutput
+		}
+	}
+	return ""
 }
 
 func (s *RunService) failRun(ctx context.Context, runID string, err error) {

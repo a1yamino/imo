@@ -129,6 +129,10 @@ func (s *SQLiteAgentStore) CreateRun(ctx context.Context, req CreateRunRequest) 
 	if goal == "" {
 		return Run{}, errors.New("goal is required")
 	}
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
 	autonomy := req.Autonomy
 	if autonomy == "" {
 		autonomy = AutonomyMedium
@@ -145,7 +149,7 @@ func (s *SQLiteAgentStore) CreateRun(ctx context.Context, req CreateRunRequest) 
 	run := Run{
 		ID:             uuid.NewString(),
 		OwnerID:        defaultOwnerID,
-		SessionID:      uuid.NewString(),
+		SessionID:      sessionID,
 		Goal:           goal,
 		Status:         RunQueued,
 		Autonomy:       autonomy,
@@ -177,6 +181,26 @@ func (s *SQLiteAgentStore) ListRuns(ctx context.Context) ([]Run, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, owner_id, session_id, goal, status, autonomy_level,
 		enabled_tools_json, workspace_scope, created_at, updated_at, started_at, completed_at
 		FROM runs ORDER BY updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []Run
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+func (s *SQLiteAgentStore) ListRunsBySession(ctx context.Context, sessionID string) ([]Run, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, owner_id, session_id, goal, status, autonomy_level,
+		enabled_tools_json, workspace_scope, created_at, updated_at, started_at, completed_at
+		FROM runs WHERE session_id = ? ORDER BY created_at ASC, id ASC`, sessionID)
 	if err != nil {
 		return nil, err
 	}

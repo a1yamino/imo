@@ -41,6 +41,21 @@ func TestDashboardServesRootAndAdmin(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), "Agent Runs") {
 				t.Fatal("response does not contain dashboard content")
 			}
+			if !strings.Contains(rec.Body.String(), "输入消息开始多轮对话") {
+				t.Fatal("response does not contain multi-turn chat entry")
+			}
+			if !strings.Contains(rec.Body.String(), "session_id: selectedSessionId") {
+				t.Fatal("response does not keep the selected session when sending")
+			}
+			if !strings.Contains(rec.Body.String(), "groupRunsBySession") {
+				t.Fatal("response does not group the run list by session")
+			}
+			if strings.Contains(rec.Body.String(), "session.id !== selectedSessionId") {
+				t.Fatal("selected sessions should still be collapsible")
+			}
+			if strings.Contains(rec.Body.String(), "创建并运行") {
+				t.Fatal("response still contains legacy create-run form")
+			}
 		})
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"imo/internal/agent"
 
@@ -17,6 +18,9 @@ import (
 type appConfig struct {
 	Addr        string
 	AgentDBPath string
+	APIKey      string
+	BaseURL     string
+	Model       string
 }
 
 type streamEvent struct {
@@ -49,15 +53,15 @@ func Run() error {
 		return err
 	}
 	defer store.Close()
-	// The MVP uses a deterministic mock loop; real tool execution can be added
-	// behind the agent.RunService boundary without changing route registration.
-	server.runService = agent.NewRunService(store, agent.PolicyEngine{})
+	llm := agent.NewOpenAICompatibleLLMClient(&http.Client{Timeout: 60 * time.Second}, cfg.APIKey, cfg.BaseURL, cfg.Model)
+	server.runService = agent.NewRunService(store, agent.PolicyEngine{}, llm)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", server.admin)
 	mux.HandleFunc("/admin", server.admin)
 	mux.HandleFunc("/api/runs", server.runs)
 	mux.HandleFunc("/api/runs/", server.runResource)
+	mux.HandleFunc("/api/sessions/", server.sessionResource)
 
 	fmt.Printf("Agent 管理员 Dashboard 已启动: http://localhost%s\n", cfg.Addr)
 	fmt.Printf("agent_db=%s\n", cfg.AgentDBPath)
@@ -74,10 +78,21 @@ func loadConfig() (appConfig, error) {
 	if agentDBPath == "" {
 		agentDBPath = "agent.db"
 	}
+	baseURL := strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))
+	if baseURL == "" {
+		baseURL = "https://api.openai.com"
+	}
+	model := strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+	if model == "" {
+		model = "gpt-4o-mini"
+	}
 
 	return appConfig{
 		Addr:        ":" + strings.TrimPrefix(port, ":"),
 		AgentDBPath: agentDBPath,
+		APIKey:      strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		BaseURL:     baseURL,
+		Model:       model,
 	}, nil
 }
 
