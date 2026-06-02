@@ -200,7 +200,7 @@ func (s *SQLiteAgentStore) ListRuns(ctx context.Context) ([]Run, error) {
 func (s *SQLiteAgentStore) ListRunsBySession(ctx context.Context, sessionID string) ([]Run, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, owner_id, session_id, goal, status, autonomy_level,
 		enabled_tools_json, workspace_scope, created_at, updated_at, started_at, completed_at
-		FROM runs WHERE session_id = ? ORDER BY created_at ASC, id ASC`, sessionID)
+		FROM runs WHERE session_id = ? ORDER BY created_at ASC, rowid ASC`, sessionID)
 	if err != nil {
 		return nil, err
 	}

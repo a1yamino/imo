@@ -20,6 +20,15 @@ export OPENAI_MODEL=gpt-4o-mini
 
 服务启动不强制要求 `OPENAI_API_KEY`，但缺少 key 时新建的 AI 对话 run 会进入 `failed`。
 
+网络搜索 provider 可配置。当前支持 Serper.dev 搜索：
+
+```bash
+export WEB_SEARCH_PROVIDER=serper
+export SERPER_API_KEY=...
+```
+
+`web.fetch` 是独立 HTTP 抓取工具，不依赖 Serper；`web.search` 在 `WEB_SEARCH_PROVIDER=serper` 且配置 `SERPER_API_KEY` 时注册。
+
 启动：
 
 ```bash
@@ -61,10 +70,12 @@ Dashboard 支持：
 5. 如果决策是 `final` 或普通文本，保存 response step。
 6. `running -> completed`
 
-当前已注册两个只读 filesystem 工具：
+当前已注册的只读工具：
 
 - `filesystem.list_dir`：列出 `workspace_scope` 内目录。
 - `filesystem.read_file`：读取 `workspace_scope` 内小于 1MiB 的文本文件。
+- `web.fetch`：读取 HTTP(S) 页面，返回 title、description、正文文本，默认最多 12000 字符。
+- `web.search`：通过配置的搜索 provider 搜索网页。当前 provider 支持 `serper`，请求 Serper 的 `https://google.serper.dev/search`。
 
 工具路径必须是相对路径，不能逃逸 `workspace_scope`。
 
@@ -72,6 +83,18 @@ Dashboard 支持：
 
 ```json
 {"type":"tool_call","tool_name":"filesystem.list_dir","arguments":{"path":"."},"reasoning_summary":"Need to inspect files."}
+```
+
+搜索调用示例：
+
+```json
+{"type":"tool_call","tool_name":"web.search","arguments":{"query":"agent runtime design","max_results":5},"reasoning_summary":"Need current references."}
+```
+
+网页读取示例：
+
+```json
+{"type":"tool_call","tool_name":"web.fetch","arguments":{"url":"https://example.com","max_chars":12000},"reasoning_summary":"Need to read the source page."}
 ```
 
 最终回复格式：
@@ -92,7 +115,7 @@ curl -s http://localhost:8080/api/runs \
   -d '{
     "goal": "检查当前项目结构并记录观察结果",
     "autonomy_level": "medium",
-    "enabled_tools": ["filesystem.list_dir", "filesystem.read_file"],
+    "enabled_tools": ["filesystem.list_dir", "filesystem.read_file", "web.search", "web.fetch"],
     "workspace_scope": "."
   }'
 ```
@@ -106,7 +129,7 @@ curl -s http://localhost:8080/api/runs \
     "session_id": "<session_id>",
     "goal": "你刚才说了什么？",
     "autonomy_level": "medium",
-    "enabled_tools": ["filesystem.list_dir", "filesystem.read_file"],
+    "enabled_tools": ["filesystem.list_dir", "filesystem.read_file", "web.search", "web.fetch"],
     "workspace_scope": "."
   }'
 ```
@@ -151,6 +174,7 @@ curl -N http://localhost:8080/api/runs/<run_id>/events
 - `internal/agent/store.go`：SQLite schema 和持久化查询。
 - `internal/agent/service.go`：runtime command 消费、多轮 session 上下文组装、AI 对话 runtime、runtime event 发布。
 - `internal/agent/tools.go`：Tool Registry 和只读 filesystem 工具。
+- `internal/agent/web_tools.go`：Serper 搜索 provider 和独立 HTTP fetch 工具。
 - `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client。
 - `internal/webapp/server.go`：配置加载、路由注册和静态页面嵌入。
 - `internal/webapp/agent_api.go`：admin 页面和 run API。
@@ -163,6 +187,6 @@ curl -N http://localhost:8080/api/runs/<run_id>/events
 建议下一步按这个顺序接真实能力：
 
 1. 增加 `waiting_approval` 状态和审批 API。
-2. 接入网页搜索 provider。
+2. 增加更多搜索 provider fallback。
 3. 增加 tool-call schema 校验和更强的模型输出修复策略。
 4. 增加上下文 token budget 和 session summary。

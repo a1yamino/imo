@@ -205,6 +205,33 @@ func TestRunServiceExecutesFilesystemToolDecision(t *testing.T) {
 	}
 }
 
+func TestSystemPromptIncludesEnabledWebSearchExample(t *testing.T) {
+	service := NewRunService(nil, PolicyEngine{}, nil)
+	RegisterSerperWebTools(service.Tools(), SerperConfig{APIKey: "key"})
+
+	prompt := service.systemPrompt(Run{
+		EnabledTools: []string{"web.search"},
+	})
+
+	if !strings.Contains(prompt, `"tool_name":"web.search"`) {
+		t.Fatalf("prompt does not include web.search tool-call example:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Do not say you will use a tool") {
+		t.Fatalf("prompt does not prohibit prose-only tool intent:\n%s", prompt)
+	}
+}
+
+func TestParseAgentDecisionAcceptsJSONCodeBlock(t *testing.T) {
+	decision := parseAgentDecision("```json\n{\"type\":\"tool_call\",\"tool_name\":\"web.search\",\"arguments\":{\"query\":\"latest agent news\"},\"reasoning_summary\":\"Need current information.\"}\n```")
+
+	if decision.Type != "tool_call" || decision.ToolName != "web.search" {
+		t.Fatalf("decision=%+v", decision)
+	}
+	if decision.Arguments["query"] != "latest agent news" {
+		t.Fatalf("arguments=%+v", decision.Arguments)
+	}
+}
+
 func TestRunServiceConsumesStartRunCommandAndPublishesRuntimeEvents(t *testing.T) {
 	ctx := context.Background()
 	store, err := NewSQLiteAgentStore(ctx, ":memory:")

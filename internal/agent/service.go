@@ -396,6 +396,7 @@ func (s *RunService) systemPrompt(run Run) string {
 	var builder strings.Builder
 	builder.WriteString("You are a helpful assistant. ")
 	builder.WriteString("You may either answer normally or call one enabled tool. ")
+	builder.WriteString("Do not say you will use a tool; actually call it by returning the tool_call JSON. ")
 	builder.WriteString(`When calling a tool, return only JSON: {"type":"tool_call","tool_name":"filesystem.list_dir","arguments":{"path":"."},"reasoning_summary":"why"}. `)
 	builder.WriteString(`When finished, return JSON: {"type":"final","content":"answer","reasoning_summary":"why"}, or plain text.`)
 	specs := s.tools.Specs()
@@ -409,9 +410,29 @@ func (s *RunService) systemPrompt(run Run) string {
 			builder.WriteString(spec.Name)
 			builder.WriteString(": ")
 			builder.WriteString(spec.Description)
+			example := toolCallExample(spec.Name)
+			if example != "" {
+				builder.WriteString(" Example: ")
+				builder.WriteString(example)
+			}
 		}
 	}
 	return builder.String()
+}
+
+func toolCallExample(name string) string {
+	switch name {
+	case "filesystem.list_dir":
+		return `{"type":"tool_call","tool_name":"filesystem.list_dir","arguments":{"path":"."},"reasoning_summary":"Need to inspect the directory."}`
+	case "filesystem.read_file":
+		return `{"type":"tool_call","tool_name":"filesystem.read_file","arguments":{"path":"README.md"},"reasoning_summary":"Need to read the file."}`
+	case "web.search":
+		return `{"type":"tool_call","tool_name":"web.search","arguments":{"query":"current topic","max_results":5},"reasoning_summary":"Need current information."}`
+	case "web.fetch":
+		return `{"type":"tool_call","tool_name":"web.fetch","arguments":{"url":"https://example.com","max_chars":12000},"reasoning_summary":"Need to read the source page."}`
+	default:
+		return ""
+	}
 }
 
 func latestAssistantMessage(steps []Step) string {
@@ -433,13 +454,29 @@ type agentDecision struct {
 
 func parseAgentDecision(content string) agentDecision {
 	var decision agentDecision
-	if err := json.Unmarshal([]byte(content), &decision); err == nil && decision.Type != "" {
+	if err := json.Unmarshal([]byte(extractJSONObject(content)), &decision); err == nil && decision.Type != "" {
 		if decision.Type == "final" && decision.Content == "" {
 			decision.Content = content
 		}
 		return decision
 	}
 	return agentDecision{Type: "final", Content: strings.TrimSpace(content)}
+}
+
+func extractJSONObject(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "```") {
+		lines := strings.Split(trimmed, "\n")
+		if len(lines) >= 3 {
+			trimmed = strings.Join(lines[1:len(lines)-1], "\n")
+		}
+	}
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start >= 0 && end > start {
+		return trimmed[start : end+1]
+	}
+	return trimmed
 }
 
 func toolEnabled(enabled []string, name string) bool {

@@ -16,11 +16,14 @@ import (
 )
 
 type appConfig struct {
-	Addr        string
-	AgentDBPath string
-	APIKey      string
-	BaseURL     string
-	Model       string
+	Addr              string
+	AgentDBPath       string
+	APIKey            string
+	BaseURL           string
+	Model             string
+	WebSearchProvider string
+	SerperAPIKey      string
+	SerperSearchURL   string
 }
 
 type streamEvent struct {
@@ -53,9 +56,18 @@ func Run() error {
 		return err
 	}
 	defer store.Close()
-	llm := agent.NewOpenAICompatibleLLMClient(&http.Client{Timeout: 60 * time.Second}, cfg.APIKey, cfg.BaseURL, cfg.Model)
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+	llm := agent.NewOpenAICompatibleLLMClient(httpClient, cfg.APIKey, cfg.BaseURL, cfg.Model)
 	server.runService = agent.NewRunService(store, agent.PolicyEngine{}, llm)
 	agent.RegisterFilesystemTools(server.runService.Tools())
+	agent.RegisterWebFetchTool(server.runService.Tools(), httpClient)
+	if cfg.WebSearchProvider == "serper" && cfg.SerperAPIKey != "" {
+		agent.RegisterSerperWebTools(server.runService.Tools(), agent.SerperConfig{
+			APIKey:    cfg.SerperAPIKey,
+			SearchURL: cfg.SerperSearchURL,
+			Client:    httpClient,
+		})
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", server.admin)
@@ -87,13 +99,27 @@ func loadConfig() (appConfig, error) {
 	if model == "" {
 		model = "gpt-4o-mini"
 	}
+	webSearchProvider := strings.ToLower(strings.TrimSpace(os.Getenv("WEB_SEARCH_PROVIDER")))
+	if webSearchProvider == "" {
+		webSearchProvider = "none"
+	}
+	if webSearchProvider != "none" && webSearchProvider != "serper" {
+		return appConfig{}, fmt.Errorf("unsupported WEB_SEARCH_PROVIDER %q", webSearchProvider)
+	}
+	serperSearchURL := strings.TrimSpace(os.Getenv("SERPER_SEARCH_URL"))
+	if serperSearchURL == "" {
+		serperSearchURL = "https://google.serper.dev/search"
+	}
 
 	return appConfig{
-		Addr:        ":" + strings.TrimPrefix(port, ":"),
-		AgentDBPath: agentDBPath,
-		APIKey:      strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
-		BaseURL:     baseURL,
-		Model:       model,
+		Addr:              ":" + strings.TrimPrefix(port, ":"),
+		AgentDBPath:       agentDBPath,
+		APIKey:            strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		BaseURL:           baseURL,
+		Model:             model,
+		WebSearchProvider: webSearchProvider,
+		SerperAPIKey:      strings.TrimSpace(os.Getenv("SERPER_API_KEY")),
+		SerperSearchURL:   serperSearchURL,
 	}, nil
 }
 
