@@ -188,6 +188,15 @@ func TestRunServiceExecutesFilesystemToolDecision(t *testing.T) {
 	if snapshot.Steps[2].ModelOutput != "I found README.md." {
 		t.Fatalf("final output=%q", snapshot.Steps[2].ModelOutput)
 	}
+	auditActions := map[string]bool{}
+	for _, event := range snapshot.AuditEvents {
+		auditActions[event.Action] = true
+	}
+	for _, action := range []string{"model_decision_created", "tool_call_started", "tool_call_finished"} {
+		if !auditActions[action] {
+			t.Fatalf("audit action %q missing; got %v", action, auditActions)
+		}
+	}
 	if len(llm.requests) != 2 {
 		t.Fatalf("llm calls=%d, want 2", len(llm.requests))
 	}

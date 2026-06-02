@@ -232,6 +232,18 @@ func (s *RunService) runAgentLoop(ctx context.Context, run Run, messages []LLMMe
 			if err != nil {
 				return Step{}, err
 			}
+			_ = s.store.SaveAuditEvent(ctx, AuditEvent{
+				OwnerID: run.OwnerID,
+				RunID:   run.ID,
+				Actor:   "agent",
+				Action:  "model_decision_created",
+				Payload: mustJSON(map[string]any{
+					"step_id":           decisionStep.ID,
+					"type":              decision.Type,
+					"tool":              decision.ToolName,
+					"reasoning_summary": decision.ReasoningSummary,
+				}),
+			})
 			s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: run.ID, Data: decisionStep})
 			observation, err := s.executeToolDecision(ctx, run, decisionStep, decision)
 			if err != nil {
@@ -310,6 +322,20 @@ func (s *RunService) executeToolDecision(ctx context.Context, run Run, step Step
 	if err != nil {
 		return "", err
 	}
+	_ = s.store.SaveAuditEvent(ctx, AuditEvent{
+		OwnerID: run.OwnerID,
+		RunID:   run.ID,
+		Actor:   "agent",
+		Action:  "tool_call_started",
+		Payload: mustJSON(map[string]any{
+			"tool":         spec.Name,
+			"tool_call_id": call.ID,
+			"step_id":      step.ID,
+			"arguments":    decision.Arguments,
+			"risk_level":   spec.Risk,
+			"policy":       policyDecision.Type,
+		}),
+	})
 	result, executeErr := tool.Execute(ctx, ToolRequest{
 		WorkspaceScope: run.WorkspaceScope,
 		Arguments:      decision.Arguments,
