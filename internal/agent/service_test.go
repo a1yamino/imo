@@ -205,6 +205,134 @@ func TestRunServiceExecutesFilesystemToolDecision(t *testing.T) {
 	}
 }
 
+func TestRunServiceRepromptsWhenModelOnlySaysItWillSearch(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	llm := &fakeLLMClient{responses: []string{
+		"我需要搜索一下最新信息。",
+		`{"type":"tool_call","tool_name":"web.search","arguments":{"query":"latest agent runtime","max_results":1},"reasoning_summary":"Need current information."}`,
+		`{"type":"final","content":"搜索完成。","reasoning_summary":"Used the search result."}`,
+	}}
+	service := NewRunService(store, PolicyEngine{}, llm)
+	service.Tools().Register(fakeSearchTool{})
+	run, err := service.CreateRun(ctx, CreateRunRequest{
+		Goal:           "查一下最新 agent runtime",
+		Autonomy:       AutonomyMedium,
+		EnabledTools:   []string{"web.search"},
+		WorkspaceScope: ".",
+	})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if err := service.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	snapshot := waitForRunStatus(t, service, run.ID, RunCompleted)
+	if len(snapshot.ToolCalls) != 1 {
+		t.Fatalf("tool calls=%d, want 1", len(snapshot.ToolCalls))
+	}
+	if snapshot.ToolCalls[0].ToolName != "web.search" {
+		t.Fatalf("tool name=%q", snapshot.ToolCalls[0].ToolName)
+	}
+	if len(llm.requests) != 3 {
+		t.Fatalf("llm calls=%d, want 3", len(llm.requests))
+	}
+	reprompt := llm.requests[1].Messages[len(llm.requests[1].Messages)-1].Content
+	if !strings.Contains(reprompt, "web.search") || !strings.Contains(reprompt, "tool_call") {
+		t.Fatalf("reprompt=%q, want web.search tool_call instruction", reprompt)
+	}
+	if snapshot.Steps[len(snapshot.Steps)-1].ModelOutput != "搜索完成。" {
+		t.Fatalf("final output=%q", snapshot.Steps[len(snapshot.Steps)-1].ModelOutput)
+	}
+}
+
+func TestRunServiceRepromptsWhenModelSaysItWillSearchOnline(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	llm := &fakeLLMClient{responses: []string{
+		"你说得对，非常抱歉，我之前没有实际搜索，直接用了过时的数据。现在立刻为你联网搜索 2025-26 NBA 总决赛的最新实时情况。\n\n请稍等 🔍",
+		`{"type":"tool_call","tool_name":"web.search","arguments":{"query":"2025-26 NBA Finals latest real-time status","max_results":1},"reasoning_summary":"Need current sports information."}`,
+		`{"type":"final","content":"已搜索。","reasoning_summary":"Used the search result."}`,
+	}}
+	service := NewRunService(store, PolicyEngine{}, llm)
+	service.Tools().Register(fakeSearchTool{})
+	run, err := service.CreateRun(ctx, CreateRunRequest{
+		Goal:           "查一下 2025-26 NBA 总决赛最新情况",
+		Autonomy:       AutonomyMedium,
+		EnabledTools:   []string{"web.search"},
+		WorkspaceScope: ".",
+	})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if err := service.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	snapshot := waitForRunStatus(t, service, run.ID, RunCompleted)
+	if len(snapshot.ToolCalls) != 1 {
+		t.Fatalf("tool calls=%d, want 1", len(snapshot.ToolCalls))
+	}
+	if len(llm.requests) != 3 {
+		t.Fatalf("llm calls=%d, want 3", len(llm.requests))
+	}
+}
+
+func TestSearchIntentDetectionUsesBareSearchButIgnoresNegation(t *testing.T) {
+	if !containsSearchIntent("我现在搜索 NBA 最新消息。") {
+		t.Fatal("bare Chinese search intent was not detected")
+	}
+	if !containsSearchIntent("I will search for the latest NBA news.") {
+		t.Fatal("bare English search intent was not detected")
+	}
+	for _, text := range []string{"不用搜索，直接回答。", "不需要搜索。", "do not search, answer directly"} {
+		if containsSearchIntent(text) {
+			t.Fatalf("negated search intent %q should not be detected", text)
+		}
+	}
+}
+
+func TestRunServiceStoresVisibleReasoningTrace(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	llm := &fakeLLMClient{response: `{"type":"final","content":"可以。","reasoning_summary":"Answer from context.","reasoning_trace":["Read the user request.","No external tool is needed.","Reply directly."]}`}
+	service := NewRunService(store, PolicyEngine{}, llm)
+	run, err := service.CreateRun(ctx, CreateRunRequest{Goal: "直接回答"})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if err := service.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	snapshot := waitForRunStatus(t, service, run.ID, RunCompleted)
+	if len(snapshot.Steps) != 1 {
+		t.Fatalf("steps=%d, want 1", len(snapshot.Steps))
+	}
+	summary := snapshot.Steps[0].ReasoningSummary
+	for _, want := range []string{"Answer from context.", "1. Read the user request.", "2. No external tool is needed.", "3. Reply directly."} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("reasoning summary %q does not contain %q", summary, want)
+		}
+	}
+}
+
 func TestSystemPromptIncludesEnabledWebSearchExample(t *testing.T) {
 	service := NewRunService(nil, PolicyEngine{}, nil)
 	RegisterSerperWebTools(service.Tools(), SerperConfig{APIKey: "key"})
@@ -218,6 +346,9 @@ func TestSystemPromptIncludesEnabledWebSearchExample(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Do not say you will use a tool") {
 		t.Fatalf("prompt does not prohibit prose-only tool intent:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "reasoning_trace") {
+		t.Fatalf("prompt does not request visible reasoning trace:\n%s", prompt)
 	}
 }
 
@@ -296,6 +427,20 @@ type fakeLLMClient struct {
 	responses   []string
 	lastRequest LLMRequest
 	requests    []LLMRequest
+}
+
+type fakeSearchTool struct{}
+
+func (fakeSearchTool) Spec() ToolSpec {
+	return ToolSpec{
+		Name:        "web.search",
+		Description: "Fake web search for runtime tests.",
+		Risk:        RiskLow,
+	}
+}
+
+func (fakeSearchTool) Execute(ctx context.Context, req ToolRequest) (ToolResult, error) {
+	return ToolResult{JSON: `{"query":"latest agent runtime","results":[{"title":"Result","url":"https://example.com","snippet":"Demo","source":"fake"}]}`}, nil
 }
 
 func (f *fakeLLMClient) Complete(ctx context.Context, req LLMRequest) (LLMResponse, error) {

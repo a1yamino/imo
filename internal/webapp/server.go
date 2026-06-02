@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -59,14 +60,24 @@ func Run() error {
 	httpClient := &http.Client{Timeout: 60 * time.Second}
 	llm := agent.NewOpenAICompatibleLLMClient(httpClient, cfg.APIKey, cfg.BaseURL, cfg.Model)
 	server.runService = agent.NewRunService(store, agent.PolicyEngine{}, llm)
+	server.runService.SetLogger(slog.Default().With("component", "agent_runtime"))
 	agent.RegisterFilesystemTools(server.runService.Tools())
 	agent.RegisterWebFetchTool(server.runService.Tools(), httpClient)
+	slog.Info("registered agent tools",
+		"tools", []string{"filesystem.list_dir", "filesystem.read_file", "web.fetch"},
+	)
 	if cfg.WebSearchProvider == "serper" && cfg.SerperAPIKey != "" {
 		agent.RegisterSerperWebTools(server.runService.Tools(), agent.SerperConfig{
 			APIKey:    cfg.SerperAPIKey,
 			SearchURL: cfg.SerperSearchURL,
 			Client:    httpClient,
 		})
+		slog.Info("registered web search provider",
+			"provider", cfg.WebSearchProvider,
+			"search_url", cfg.SerperSearchURL,
+		)
+	} else {
+		slog.Info("web search provider disabled", "provider", cfg.WebSearchProvider)
 	}
 
 	mux := http.NewServeMux()
@@ -76,8 +87,13 @@ func Run() error {
 	mux.HandleFunc("/api/runs/", server.runResource)
 	mux.HandleFunc("/api/sessions/", server.sessionResource)
 
-	fmt.Printf("Agent 管理员 Dashboard 已启动: http://localhost%s\n", cfg.Addr)
-	fmt.Printf("agent_db=%s\n", cfg.AgentDBPath)
+	slog.Info("agent admin dashboard started",
+		"addr", cfg.Addr,
+		"url", "http://localhost"+cfg.Addr,
+		"agent_db", cfg.AgentDBPath,
+		"model", cfg.Model,
+		"openai_base_url", cfg.BaseURL,
+	)
 	return http.ListenAndServe(cfg.Addr, mux)
 }
 
