@@ -274,7 +274,12 @@ func (s *SQLiteAgentStore) SaveToolCall(ctx context.Context, call ToolCall) (Too
 	_, err := s.db.ExecContext(ctx, `INSERT INTO tool_calls (
 		id, run_id, step_id, tool_name, arguments_json, risk_level, policy_decision,
 		approval_status, status, result_json, error, started_at, finished_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			status = excluded.status,
+			result_json = excluded.result_json,
+			error = excluded.error,
+			finished_at = excluded.finished_at`,
 		call.ID, call.RunID, call.StepID, call.ToolName, call.ArgumentsJSON, call.RiskLevel, call.PolicyDecision,
 		call.ApprovalStatus, call.Status, call.ResultJSON, call.Error, formatTime(call.StartedAt), formatOptionalTime(call.FinishedAt))
 	if err != nil {

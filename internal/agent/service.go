@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -26,6 +28,7 @@ type RunService struct {
 	store  AgentStore
 	policy PolicyEngine
 	llm    LLMClient
+	tools  *ToolRegistry
 
 	commands chan RuntimeCommand
 
@@ -38,11 +41,16 @@ func NewRunService(store AgentStore, policy PolicyEngine, llm LLMClient) *RunSer
 		store:     store,
 		policy:    policy,
 		llm:       llm,
+		tools:     NewToolRegistry(),
 		commands:  make(chan RuntimeCommand, 64),
 		observers: make(map[string]map[chan RuntimeEvent]struct{}),
 	}
 	go service.runtimeLoop()
 	return service
+}
+
+func (s *RunService) Tools() *ToolRegistry {
+	return s.tools
 }
 
 func (s *RunService) CreateRun(ctx context.Context, req CreateRunRequest) (Run, error) {
@@ -175,26 +183,11 @@ func (s *RunService) executeConversationRun(ctx context.Context, runID string) {
 		s.failRun(ctx, runID, err)
 		return
 	}
-	reply, err := s.llm.Complete(ctx, LLMRequest{Messages: messages})
+	response, err := s.runAgentLoop(ctx, run, messages)
 	if err != nil {
 		s.failRun(ctx, runID, err)
 		return
 	}
-
-	response, err := s.store.AppendStep(ctx, Step{
-		RunID:            runID,
-		Index:            1,
-		Type:             StepResponse,
-		Status:           StepCompleted,
-		ModelInput:       run.Goal,
-		ModelOutput:      reply.Content,
-		ReasoningSummary: "普通 AI 对话回复。",
-	})
-	if err != nil {
-		s.failRun(ctx, runID, err)
-		return
-	}
-	s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: runID, Data: response})
 
 	if err := s.store.UpdateRunStatus(ctx, runID, RunCompleted); err != nil {
 		s.failRun(ctx, runID, err)
@@ -218,8 +211,133 @@ func (s *RunService) executeConversationRun(ctx context.Context, runID string) {
 	s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventRunCompleted, RunID: runID, Data: completed})
 }
 
+func (s *RunService) runAgentLoop(ctx context.Context, run Run, messages []LLMMessage) (Step, error) {
+	for index := 1; index <= 8; index++ {
+		reply, err := s.llm.Complete(ctx, LLMRequest{Messages: messages})
+		if err != nil {
+			return Step{}, err
+		}
+		decision := parseAgentDecision(reply.Content)
+		switch decision.Type {
+		case "tool_call":
+			decisionStep, err := s.store.AppendStep(ctx, Step{
+				RunID:            run.ID,
+				Index:            index,
+				Type:             StepModelDecision,
+				Status:           StepCompleted,
+				ModelInput:       messages[len(messages)-1].Content,
+				ModelOutput:      reply.Content,
+				ReasoningSummary: decision.ReasoningSummary,
+			})
+			if err != nil {
+				return Step{}, err
+			}
+			s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: run.ID, Data: decisionStep})
+			observation, err := s.executeToolDecision(ctx, run, decisionStep, decision)
+			if err != nil {
+				return Step{}, err
+			}
+			index++
+			observationStep, err := s.store.AppendStep(ctx, Step{
+				RunID:       run.ID,
+				Index:       index,
+				Type:        StepObservation,
+				Status:      StepCompleted,
+				Observation: observation,
+			})
+			if err != nil {
+				return Step{}, err
+			}
+			s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: run.ID, Data: observationStep})
+			messages = append(messages,
+				LLMMessage{Role: "assistant", Content: reply.Content},
+				LLMMessage{Role: "user", Content: fmt.Sprintf("Tool result for %s: %s", decision.ToolName, observation)},
+			)
+		default:
+			summary := decision.ReasoningSummary
+			if summary == "" {
+				summary = "普通 AI 对话回复。"
+			}
+			response, err := s.store.AppendStep(ctx, Step{
+				RunID:            run.ID,
+				Index:            index,
+				Type:             StepResponse,
+				Status:           StepCompleted,
+				ModelInput:       messages[len(messages)-1].Content,
+				ModelOutput:      decision.Content,
+				ReasoningSummary: summary,
+			})
+			if err != nil {
+				return Step{}, err
+			}
+			s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: run.ID, Data: response})
+			return response, nil
+		}
+	}
+	return Step{}, errors.New("agent loop exceeded maximum steps")
+}
+
+func (s *RunService) executeToolDecision(ctx context.Context, run Run, step Step, decision agentDecision) (string, error) {
+	if decision.ToolName == "" {
+		return "", errors.New("tool decision missing tool_name")
+	}
+	if !toolEnabled(run.EnabledTools, decision.ToolName) {
+		return "", fmt.Errorf("tool %s is not enabled for this run", decision.ToolName)
+	}
+	tool, ok := s.tools.Get(decision.ToolName)
+	if !ok {
+		return "", fmt.Errorf("tool %s is not registered", decision.ToolName)
+	}
+	spec := tool.Spec()
+	policyDecision := s.policy.Evaluate(PolicyRequest{
+		Autonomy: run.Autonomy,
+		Risk:     spec.Risk,
+		ToolName: spec.Name,
+	})
+	if policyDecision.Type != PolicyAllow {
+		return "", fmt.Errorf("tool %s policy decision: %s", spec.Name, policyDecision.Type)
+	}
+	call, err := s.store.SaveToolCall(ctx, ToolCall{
+		RunID:          run.ID,
+		StepID:         step.ID,
+		ToolName:       spec.Name,
+		ArgumentsJSON:  mustJSON(decision.Arguments),
+		RiskLevel:      spec.Risk,
+		PolicyDecision: policyDecision.Type,
+		ApprovalStatus: "not_required",
+		Status:         ToolCallRequested,
+	})
+	if err != nil {
+		return "", err
+	}
+	result, executeErr := tool.Execute(ctx, ToolRequest{
+		WorkspaceScope: run.WorkspaceScope,
+		Arguments:      decision.Arguments,
+	})
+	call.Status = ToolCallCompleted
+	call.ResultJSON = result.JSON
+	if executeErr != nil {
+		call.Status = ToolCallFailed
+		call.Error = executeErr.Error()
+	}
+	if _, err := s.store.SaveToolCall(ctx, call); err != nil {
+		return "", err
+	}
+	if executeErr != nil {
+		return "", executeErr
+	}
+	_ = s.store.SaveAuditEvent(ctx, AuditEvent{
+		OwnerID: run.OwnerID,
+		RunID:   run.ID,
+		Actor:   "agent",
+		Action:  "tool_call_finished",
+		Payload: mustJSON(map[string]any{"tool": spec.Name, "tool_call_id": call.ID}),
+	})
+	return result.JSON, nil
+}
+
 func (s *RunService) conversationMessages(ctx context.Context, run Run) ([]LLMMessage, error) {
-	messages := []LLMMessage{{Role: "system", Content: "You are a helpful assistant."}}
+	messages := []LLMMessage{{Role: "system", Content: s.systemPrompt(run)}}
 	runs, err := s.store.ListRunsBySession(ctx, run.SessionID)
 	if err != nil {
 		return nil, err
@@ -248,6 +366,28 @@ func (s *RunService) conversationMessages(ctx context.Context, run Run) ([]LLMMe
 	return messages, nil
 }
 
+func (s *RunService) systemPrompt(run Run) string {
+	var builder strings.Builder
+	builder.WriteString("You are a helpful assistant. ")
+	builder.WriteString("You may either answer normally or call one enabled tool. ")
+	builder.WriteString(`When calling a tool, return only JSON: {"type":"tool_call","tool_name":"filesystem.list_dir","arguments":{"path":"."},"reasoning_summary":"why"}. `)
+	builder.WriteString(`When finished, return JSON: {"type":"final","content":"answer","reasoning_summary":"why"}, or plain text.`)
+	specs := s.tools.Specs()
+	if len(specs) == 0 || len(run.EnabledTools) == 0 {
+		return builder.String()
+	}
+	builder.WriteString(" Enabled tools:")
+	for _, spec := range specs {
+		if toolEnabled(run.EnabledTools, spec.Name) {
+			builder.WriteString("\n- ")
+			builder.WriteString(spec.Name)
+			builder.WriteString(": ")
+			builder.WriteString(spec.Description)
+		}
+	}
+	return builder.String()
+}
+
 func latestAssistantMessage(steps []Step) string {
 	for i := len(steps) - 1; i >= 0; i-- {
 		if steps[i].Type == StepResponse && steps[i].ModelOutput != "" {
@@ -255,6 +395,34 @@ func latestAssistantMessage(steps []Step) string {
 		}
 	}
 	return ""
+}
+
+type agentDecision struct {
+	Type             string         `json:"type"`
+	ToolName         string         `json:"tool_name"`
+	Arguments        map[string]any `json:"arguments"`
+	Content          string         `json:"content"`
+	ReasoningSummary string         `json:"reasoning_summary"`
+}
+
+func parseAgentDecision(content string) agentDecision {
+	var decision agentDecision
+	if err := json.Unmarshal([]byte(content), &decision); err == nil && decision.Type != "" {
+		if decision.Type == "final" && decision.Content == "" {
+			decision.Content = content
+		}
+		return decision
+	}
+	return agentDecision{Type: "final", Content: strings.TrimSpace(content)}
+}
+
+func toolEnabled(enabled []string, name string) bool {
+	for _, item := range enabled {
+		if item == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *RunService) failRun(ctx context.Context, runID string, err error) {

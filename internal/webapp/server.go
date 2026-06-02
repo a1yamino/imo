@@ -55,6 +55,7 @@ func Run() error {
 	defer store.Close()
 	llm := agent.NewOpenAICompatibleLLMClient(&http.Client{Timeout: 60 * time.Second}, cfg.APIKey, cfg.BaseURL, cfg.Model)
 	server.runService = agent.NewRunService(store, agent.PolicyEngine{}, llm)
+	agent.RegisterFilesystemTools(server.runService.Tools())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", server.admin)

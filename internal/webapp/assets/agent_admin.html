@@ -693,7 +693,7 @@
           session_id: selectedSessionId || "",
           autonomy_level: document.getElementById("autonomy").value,
           workspace_scope: document.getElementById("workspaceScope").value.trim() || ".",
-          enabled_tools: []
+          enabled_tools: ["filesystem.list_dir", "filesystem.read_file"]
         })
       }).finally(() => {
         sendBtnEl.disabled = false;

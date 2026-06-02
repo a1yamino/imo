@@ -48,17 +48,39 @@ Dashboard 支持：
 - 查看 run 状态、自主等级、启用工具和 workspace scope。
 - 查看执行时间线。
 - 查看每步 `reasoning_summary` 和模型决策 JSON。
-- 查看工具调用参数、Policy 决策、风险等级和结果。当前普通 AI 对话不会产生工具调用。
+- 查看工具调用参数、Policy 决策、风险等级和结果。
 - 查看审计事件。
 - 通过 SSE 观察 runtime event，并自动刷新当前选中的 run。
 
-当前 AI 对话 run 会执行：
+当前 AI run 会执行：
 
 1. `queued -> running`
 2. 按 `session_id` 读取之前已完成 run 的 user/assistant 历史。
-3. 调用 OpenAI 兼容 Chat Completions。
-4. 保存 response step。
-5. `running -> completed`
+3. 调用 OpenAI 兼容 Chat Completions 获取决策。
+4. 如果决策是 `tool_call`，先保存 model decision step，再执行工具，保存 tool call 和 observation step，并把 observation 交回模型。
+5. 如果决策是 `final` 或普通文本，保存 response step。
+6. `running -> completed`
+
+当前已注册两个只读 filesystem 工具：
+
+- `filesystem.list_dir`：列出 `workspace_scope` 内目录。
+- `filesystem.read_file`：读取 `workspace_scope` 内小于 1MiB 的文本文件。
+
+工具路径必须是相对路径，不能逃逸 `workspace_scope`。
+
+模型决策格式：
+
+```json
+{"type":"tool_call","tool_name":"filesystem.list_dir","arguments":{"path":"."},"reasoning_summary":"Need to inspect files."}
+```
+
+最终回复格式：
+
+```json
+{"type":"final","content":"I found README.md.","reasoning_summary":"The listing contains README.md."}
+```
+
+如果模型返回普通文本，runtime 会把它当作最终回复。
 
 ## API
 
@@ -70,7 +92,7 @@ curl -s http://localhost:8080/api/runs \
   -d '{
     "goal": "检查当前项目结构并记录观察结果",
     "autonomy_level": "medium",
-    "enabled_tools": [],
+    "enabled_tools": ["filesystem.list_dir", "filesystem.read_file"],
     "workspace_scope": "."
   }'
 ```
@@ -84,7 +106,7 @@ curl -s http://localhost:8080/api/runs \
     "session_id": "<session_id>",
     "goal": "你刚才说了什么？",
     "autonomy_level": "medium",
-    "enabled_tools": [],
+    "enabled_tools": ["filesystem.list_dir", "filesystem.read_file"],
     "workspace_scope": "."
   }'
 ```
@@ -128,6 +150,7 @@ curl -N http://localhost:8080/api/runs/<run_id>/events
 - `internal/agent/policy.go`：可配置自主等级的最小 Policy Engine。
 - `internal/agent/store.go`：SQLite schema 和持久化查询。
 - `internal/agent/service.go`：runtime command 消费、多轮 session 上下文组装、AI 对话 runtime、runtime event 发布。
+- `internal/agent/tools.go`：Tool Registry 和只读 filesystem 工具。
 - `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client。
 - `internal/webapp/server.go`：配置加载、路由注册和静态页面嵌入。
 - `internal/webapp/agent_api.go`：admin 页面和 run API。
@@ -139,7 +162,7 @@ curl -N http://localhost:8080/api/runs/<run_id>/events
 
 建议下一步按这个顺序接真实能力：
 
-1. 增加 Tool Registry + Tool Executor。
-2. 增加 `waiting_approval` 状态和审批 API。
-3. 实现真实 `filesystem.list_dir` 和 `filesystem.read_file`。
-4. 接入网页搜索 provider。
+1. 增加 `waiting_approval` 状态和审批 API。
+2. 接入网页搜索 provider。
+3. 增加 tool-call schema 校验和更强的模型输出修复策略。
+4. 增加上下文 token budget 和 session summary。

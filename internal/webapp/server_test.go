@@ -50,6 +50,9 @@ func TestDashboardServesRootAndAdmin(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), "groupRunsBySession") {
 				t.Fatal("response does not group the run list by session")
 			}
+			if !strings.Contains(rec.Body.String(), `"filesystem.list_dir", "filesystem.read_file"`) {
+				t.Fatal("response does not enable filesystem tools for chat runs")
+			}
 			if strings.Contains(rec.Body.String(), "session.id !== selectedSessionId") {
 				t.Fatal("selected sessions should still be collapsible")
 			}
