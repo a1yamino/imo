@@ -4,196 +4,515 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agent Admin Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f4f6f8;
-      --panel: #ffffff;
-      --line: #d7dde5;
-      --text: #172033;
-      --muted: #667085;
-      --blue: #1f6feb;
-      --green: #16825d;
-      --amber: #9a6700;
-      --red: #b42318;
-      --ink: #24292f;
+      /* Base values (Dark Theme by default) */
+      color-scheme: dark;
+      --bg: #090a10;
+      --sidebar-bg: #0e111a;
+      --panel: #131722;
+      --panel-hover: #1b2030;
+      --card-bg: #131722;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --line: rgba(255, 255, 255, 0.08);
+      --line-light: rgba(255, 255, 255, 0.04);
+      --text: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --muted: #6b7280;
+      --blue: #3b82f6;
+      --blue-light: rgba(59, 130, 246, 0.15);
+      --blue-border: rgba(59, 130, 246, 0.3);
+      --blue-dark: #1d4ed8;
+      --green: #10b981;
+      --green-light: rgba(16, 185, 129, 0.15);
+      --green-border: rgba(16, 185, 129, 0.3);
+      --green-dark: #047857;
+      --amber: #f59e0b;
+      --amber-light: rgba(245, 158, 11, 0.15);
+      --amber-border: rgba(245, 158, 11, 0.3);
+      --red: #ef4444;
+      --red-light: rgba(239, 68, 68, 0.15);
+      --red-border: rgba(239, 68, 68, 0.3);
+      --ink: #e2e8f0;
+      
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.5);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+      --shadow-lg: 0 12px 24px rgba(0,0,0,0.6);
+      --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
+      
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-lg: 16px;
+      --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    * { box-sizing: border-box; }
+    [data-theme="light"] {
+      color-scheme: light;
+      --bg: #f5f7fa;
+      --sidebar-bg: #eceff3;
+      --panel: #ffffff;
+      --panel-hover: #f1f4f8;
+      --card-bg: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.08);
+      --line: rgba(0, 0, 0, 0.08);
+      --line-light: rgba(0, 0, 0, 0.04);
+      --text: #1f2937;
+      --text-secondary: #4b5563;
+      --muted: #9ca3af;
+      --blue: #2563eb;
+      --blue-light: rgba(37, 99, 235, 0.08);
+      --blue-border: rgba(37, 99, 235, 0.25);
+      --blue-dark: #1d4ed8;
+      --green: #16a34a;
+      --green-light: rgba(22, 163, 74, 0.08);
+      --green-border: rgba(22, 163, 74, 0.25);
+      --green-dark: #15803d;
+      --amber: #d97706;
+      --amber-light: rgba(217, 119, 6, 0.08);
+      --amber-border: rgba(217, 119, 6, 0.25);
+      --red: #dc2626;
+      --red-light: rgba(220, 38, 38, 0.08);
+      --red-border: rgba(220, 38, 38, 0.25);
+      --ink: #1f2937;
+      
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.05);
+      --shadow-lg: 0 12px 24px rgba(0,0,0,0.08);
+      --shadow-glow: 0 0 20px rgba(37, 99, 235, 0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      margin: 0;
       min-height: 100vh;
       background: var(--bg);
       color: var(--text);
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color var(--transition), color var(--transition);
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--line);
+      border-radius: 99px;
+      transition: var(--transition);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-secondary);
     }
 
     .shell {
       display: grid;
-      grid-template-columns: 300px minmax(420px, 1fr) 380px;
+      grid-template-columns: 340px 1fr 420px;
       height: 100vh;
       overflow: hidden;
+      background: var(--bg);
     }
 
-    aside, main, .detail {
-      min-width: 0;
-      min-height: 0;
-      overflow: auto;
+    aside {
+      background: var(--sidebar-bg);
       border-right: 1px solid var(--line);
-      background: var(--panel);
-    }
-
-    main { background: #fbfcfe; }
-    .detail { border-right: 0; }
-
-    .workspace {
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      min-height: 0;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
+      transition: background-color var(--transition), border-color var(--transition);
     }
 
-    .section {
-      padding: 16px;
+    main {
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--line);
+      transition: background-color var(--transition), border-color var(--transition);
+    }
+
+    .detail {
+      background: var(--sidebar-bg);
+      border-left: 1px solid var(--line);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      padding: 0 0 24px;
+      transition: background-color var(--transition), border-color var(--transition);
+    }
+
+    .aside-header {
+      padding: 24px;
       border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
     }
 
-    h1, h2, h3 {
-      margin: 0;
-      letter-spacing: 0;
-      line-height: 1.25;
+    .aside-header .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
 
-    h1 { font-size: 19px; }
-    h2 { font-size: 15px; margin-bottom: 12px; }
-    h3 { font-size: 14px; }
+    .aside-header h1 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+    }
 
-    .muted {
+    .aside-header h1 .icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+      background-size: 200% 200%;
+      animation: gradientBg 8s ease infinite;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+
+    @keyframes gradientBg {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .header-buttons {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .aside-section {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line-light);
+      flex-shrink: 0;
+    }
+
+    .aside-section h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
       color: var(--muted);
-      font-size: 13px;
+      margin-bottom: 14px;
     }
+
+    .aside-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+    }
+
+    h1, h2, h3 { letter-spacing: -0.02em; line-height: 1.3; }
+
+    .muted { color: var(--muted); font-size: 12px; }
 
     label {
-      display: grid;
-      gap: 5px;
-      margin-bottom: 10px;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 650;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 600;
     }
 
     input, select, textarea {
       width: 100%;
-      min-height: 38px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: white;
+      height: 42px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      background: var(--panel);
       color: var(--text);
       font: inherit;
-      padding: 8px 10px;
+      font-size: 13px;
+      padding: 0 14px;
+      transition: var(--transition);
+      outline: none;
+      box-shadow: var(--shadow-sm);
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px var(--blue-light), var(--shadow-sm);
+      background: var(--panel-hover);
     }
 
     textarea {
       min-height: 96px;
       resize: vertical;
-      line-height: 1.45;
+      line-height: 1.6;
+      padding: 12px 14px;
     }
 
     .chat-input {
-      min-height: 52px;
+      min-height: 46px;
       max-height: 160px;
-      resize: vertical;
+      resize: none;
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 14px;
+      background: var(--bg);
+      border-color: var(--card-border);
+      font-family: inherit;
+    }
+
+    .chat-input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px var(--blue-light), var(--shadow-md);
+      background: var(--panel);
     }
 
     button {
-      min-height: 38px;
-      border: 1px solid var(--blue);
-      border-radius: 6px;
-      background: var(--blue);
+      height: 40px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, var(--blue), var(--blue-dark));
       color: white;
       cursor: pointer;
       font: inherit;
-      font-weight: 650;
-      padding: 0 12px;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 0 18px;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+      box-shadow: 0 2px 4px rgba(59, 130, 246, 0.15);
     }
 
+    button:hover {
+      filter: brightness(1.1);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+      transform: translateY(-1px);
+    }
+    button:active { transform: translateY(0) scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; filter: none !important; }
+
     button.secondary {
-      border-color: var(--line);
-      background: white;
+      background: var(--panel);
       color: var(--text);
+      border: 1px solid var(--card-border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    button.secondary:hover {
+      background: var(--panel-hover);
+      border-color: var(--text-secondary);
+      box-shadow: var(--shadow-md);
+      color: var(--text);
+      transform: translateY(-1px);
     }
 
     .run-list {
-      display: grid;
-      gap: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .session-group {
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      background: var(--card-bg);
+      overflow: hidden;
+      transition: var(--transition);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .session-group:hover {
+      box-shadow: var(--shadow-md);
+      border-color: var(--line);
+    }
+
+    .session-head {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+    }
+
+    .toggle-session {
+      width: 40px;
+      min-height: 40px;
+      flex-shrink: 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+      font-size: 12px;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: none;
+    }
+
+    .toggle-session:hover {
+      background: var(--panel-hover);
+      color: var(--text);
+      transform: none;
+    }
+    
+    .toggle-session svg {
+      transition: transform 0.2s ease;
+    }
+    
+    .session-group.collapsed .toggle-session svg {
+      transform: rotate(-90deg);
+    }
+
+    .session-button {
+      flex: 1;
+      min-height: 0;
+      text-align: left;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--text);
+      padding: 12px 14px 12px 0;
+      cursor: pointer;
+      transition: var(--transition);
+      border-left: 3px solid transparent;
+      box-shadow: none;
+    }
+
+    .session-button:hover {
+      background: var(--panel-hover);
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .session-button.active {
+      border-left-color: var(--blue);
+      background: var(--blue-light);
+      box-shadow: none;
+    }
+
+    .session-button .title {
+      flex: 1;
+      min-width: 0;
+      font-weight: 700;
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .session-button .meta {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .session-runs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px 12px 12px 40px;
+      border-top: 1px solid var(--line-light);
+      background: rgba(0, 0, 0, 0.05);
+    }
+    
+    [data-theme="light"] .session-runs {
+      background: rgba(0, 0, 0, 0.02);
     }
 
     .run-item {
       width: 100%;
       text-align: left;
-      border: 1px solid var(--line);
-      background: white;
-      color: var(--text);
-      border-radius: 6px;
-      padding: 10px;
-    }
-
-    .run-item.active {
-      border-color: var(--blue);
-      box-shadow: inset 3px 0 0 var(--blue);
-    }
-
-    .session-group {
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: white;
-      overflow: hidden;
-    }
-
-    .session-head {
-      display: grid;
-      grid-template-columns: 30px 1fr;
-      align-items: stretch;
-      gap: 6px;
-      padding: 8px;
-    }
-
-    .session-button {
-      width: 100%;
-      min-height: 0;
-      text-align: left;
-      border: 0;
-      border-radius: 4px;
-      background: white;
-      color: var(--text);
-      padding: 2px;
-    }
-
-    .session-button.active {
-      box-shadow: inset 3px 0 0 var(--blue);
-    }
-
-    .toggle-session {
-      width: 28px;
-      min-height: 28px;
-      border-color: var(--line);
-      background: white;
-      color: var(--muted);
-      padding: 0;
-    }
-
-    .session-runs {
-      display: grid;
-      gap: 6px;
-      padding: 0 8px 8px 18px;
-      border-top: 1px solid #eef1f5;
-    }
-
-    .session-runs .run-item {
-      border-radius: 5px;
-      padding: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: var(--transition);
+      font: inherit;
       font-size: 13px;
+      box-shadow: none;
+    }
+
+    .run-item:hover {
+      background: var(--panel-hover);
+      border-color: var(--line-light);
+      color: var(--text);
+      transform: translateX(2px);
+    }
+    
+    .run-item.active {
+      background: var(--blue-light);
+      border-color: var(--blue-border);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .run-goal {
+      font-weight: 600;
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+      width: 100%;
+      text-align: left;
+    }
+
+    .run-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+    }
+    
+    .run-meta .time {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .run-item .badge {
+      font-size: 9px;
+      height: 18px;
+      padding: 0 6px;
+      text-transform: uppercase;
+      font-weight: 800;
+      box-shadow: none;
     }
 
     .row {
@@ -201,102 +520,540 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
+      width: 100%;
+      min-width: 0;
     }
 
     .badge {
       display: inline-flex;
       align-items: center;
-      min-height: 22px;
-      border-radius: 999px;
-      padding: 0 8px;
-      border: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 12px;
+      height: 22px;
+      border-radius: 99px;
+      padding: 0 10px;
+      font-size: 11px;
       font-weight: 700;
       white-space: nowrap;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      box-shadow: var(--shadow-sm);
     }
 
-    .badge.running { border-color: #8bb9ff; color: var(--blue); }
-    .badge.completed { border-color: #7bc6a4; color: var(--green); }
-    .badge.failed, .badge.blocked { border-color: #f0a7a0; color: var(--red); }
-    .badge.waiting_approval { border-color: #e7c46b; color: var(--amber); }
+    .badge:not([class*="running"]):not([class*="completed"]):not([class*="failed"]):not([class*="blocked"]):not([class*="waiting"]) {
+      background: var(--panel);
+      color: var(--muted);
+      border: 1px solid var(--card-border);
+    }
 
-    .timeline {
-      display: grid;
-      gap: 10px;
+    .badge.running {
+      background: var(--blue-light);
+      color: var(--blue);
+      border: 1px solid var(--blue-border);
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.2);
+    }
+    
+    .badge.completed {
+      background: var(--green-light);
+      color: var(--green);
+      border: 1px solid var(--green-border);
+    }
+    
+    .badge.failed, .badge.blocked {
+      background: var(--red-light);
+      color: var(--red);
+      border: 1px solid var(--red-border);
+    }
+    
+    .badge.waiting_approval {
+      background: var(--amber-light);
+      color: var(--amber);
+      border: 1px solid var(--amber-border);
+      animation: borderPulse 2s infinite;
+    }
+
+    .badge.running::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--blue);
+      margin-right: 6px;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.2); }
+    }
+    
+    @keyframes borderPulse {
+      0%, 100% { border-color: var(--amber-border); }
+      50% { border-color: var(--amber); }
+    }
+
+    .session-button .badge {
+      font-size: 9px;
+      height: 18px;
+      padding: 0 6px;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    .badge.decision-approved, .badge.actor-user {
+      background: var(--green-light);
+      color: var(--green);
+      border: 1px solid var(--green-border);
+    }
+    
+    .badge.decision-rejected, .badge.actor-agent {
+      background: var(--red-light);
+      color: var(--red);
+      border: 1px solid var(--red-border);
+    }
+
+    .main-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .header-container {
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .main-header h1 {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .main-header .meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-weight: 500;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .main-header .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
 
     .conversation {
-      overflow: auto;
-      min-height: 0;
-      padding: 16px;
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      background: var(--bg);
+    }
+
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      max-width: 900px;
+      margin: 0 auto;
     }
 
     .composer {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-      align-items: end;
-      padding: 16px;
+      padding: 20px 24px 24px;
       border-top: 1px solid var(--line);
       background: var(--panel);
+      flex-shrink: 0;
     }
 
-    .item {
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: white;
-      padding: 12px;
+    .composer-container {
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .composer-container textarea { flex: 1; }
+
+    .composer-container button {
+      height: 46px;
+      padding: 0 24px;
+      border-radius: var(--radius);
+      font-size: 14px;
     }
 
     .message {
-      max-width: 780px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: white;
-      padding: 12px;
+      max-width: 85%;
+      border-radius: var(--radius-lg);
+      padding: 18px 22px;
+      animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      line-height: 1.6;
+      position: relative;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .message.user {
+      align-self: flex-end;
+      background: linear-gradient(135deg, var(--blue), #4f46e5);
+      color: white;
+      border-bottom-right-radius: 4px;
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.25);
       margin-left: auto;
-      border-color: #b8d3ff;
-      background: #eef5ff;
+    }
+    
+    [data-theme="light"] .message.user {
+      background: linear-gradient(135deg, var(--blue), #3b82f6);
+    }
+
+    .message.user .msg-content {
+      font-size: 14.5px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-weight: 500;
     }
 
     .message.assistant {
+      align-self: flex-start;
+      background: var(--panel);
+      border: 1px solid var(--card-border);
+      border-bottom-left-radius: 4px;
+      box-shadow: var(--shadow-md);
       margin-right: auto;
     }
 
-    pre {
-      margin: 8px 0 0;
-      max-height: 260px;
+    .message.assistant .msg-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--line-light);
+      padding-bottom: 10px;
+    }
+
+    .message.assistant .msg-header .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 11px;
+      font-weight: 800;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+    }
+
+    .message.assistant .msg-header h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* 思维链 - reasoning-details styling */
+    .reasoning-details {
+      margin-bottom: 14px;
+      border: 1px solid var(--blue-border);
+      border-radius: var(--radius-sm);
+      background: var(--blue-light);
+      overflow: hidden;
+      transition: var(--transition);
+    }
+    
+    .reasoning-details summary {
+      padding: 10px 14px;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--blue);
+      cursor: pointer;
+      user-select: none;
+      outline: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .reasoning-details summary::marker {
+      color: var(--blue);
+    }
+    
+    .reasoning-details[open] summary {
+      border-bottom: 1px solid var(--blue-border);
+    }
+    
+    .reasoning-content {
+      padding: 12px 14px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      font-style: italic;
+      white-space: pre-wrap;
+    }
+
+    .code-wrapper {
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      background: #0f141c; /* always dark code block for premium look */
+      overflow: hidden;
+      margin-top: 14px;
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .code-header {
+      background: #171d26;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .code-lang {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .copy-code-btn {
+      height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #9ca3af;
+      border-radius: var(--radius-sm);
+      box-shadow: none;
+      font-weight: 500;
+    }
+    
+    .copy-code-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.2);
+      color: white;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .code-wrapper pre {
+      margin: 0 !important;
+      max-height: 350px;
       overflow: auto;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
-      background: #f7f8fa;
-      color: var(--ink);
-      padding: 10px;
-      font-size: 12px;
-      line-height: 1.5;
+      background: transparent !important;
+      border: none !important;
+      color: #e2e8f0;
+      padding: 16px;
+      font-size: 12.5px;
+      line-height: 1.6;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .pending-reply {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-left: 38px;
+      margin: 10px 0;
+    }
+    
+    .dot-pulse {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .dot-pulse span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--blue);
+      animation: dotPulseKeyframe 1.4s infinite ease-in-out both;
+    }
+    
+    .dot-pulse span:nth-child(1) { animation-delay: -0.32s; }
+    .dot-pulse span:nth-child(2) { animation-delay: -0.16s; }
+    
+    @keyframes dotPulseKeyframe {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+
+    .item {
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      background: var(--panel);
+      padding: 16px;
+      margin-bottom: 12px;
+      transition: var(--transition);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .item:hover {
+      box-shadow: var(--shadow-md);
+      border-color: var(--line);
+    }
+
+    .item .item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .item h3 {
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      color: var(--text);
+    }
+    
+    .item-meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      font-weight: 500;
+    }
+    
+    .code-wrapper.small .code-header {
+      padding: 6px 12px;
+    }
+    
+    .code-wrapper.small pre {
+      padding: 10px 12px;
+      font-size: 11.5px;
+      max-height: 220px;
     }
 
     .kv {
       display: grid;
-      grid-template-columns: 120px 1fr;
-      gap: 6px 10px;
+      grid-template-columns: 100px 1fr;
+      gap: 12px 16px;
       font-size: 13px;
-      line-height: 1.45;
+      line-height: 1.5;
+      padding: 16px;
+      background: var(--panel);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .kv .key {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+    }
+
+    .kv .value {
+      color: var(--text);
+      word-break: break-all;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      font-weight: 500;
     }
 
     .empty {
       min-height: 180px;
-      display: grid;
-      place-items: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
       color: var(--muted);
       text-align: center;
-      padding: 20px;
+      padding: 32px;
+      background: var(--panel);
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+      margin: 10px 0;
+    }
+
+    .empty .empty-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      background: var(--line-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 6px;
+      color: var(--text-secondary);
+      border: 1px solid var(--card-border);
+    }
+
+    .empty .empty-text {
+      font-size: 13.5px;
+      font-weight: 500;
+    }
+
+    .detail-header {
+      padding: 24px 24px 12px;
+    }
+
+    .detail-header h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .detail-section {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line-light);
+    }
+
+    .detail-section:last-child { border-bottom: 0; }
+
+    .detail-section h2 {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .detail-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    @media (max-width: 1300px) {
+      .shell {
+        grid-template-columns: 280px 1fr 350px;
+      }
     }
 
     @media (max-width: 1100px) {
@@ -306,32 +1063,54 @@
         overflow: visible;
       }
 
-      aside, main, .detail {
+      aside {
         height: auto;
-        overflow: visible;
+        max-height: 45vh;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      main {
+        min-height: 60vh;
         border-right: 0;
       }
 
-      .workspace {
-        min-height: 70vh;
+      .detail {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        height: auto;
+        max-height: none;
       }
 
-      .composer {
-        grid-template-columns: 1fr;
-      }
+      .composer { flex-direction: column; align-items: stretch; }
+      .composer button { width: 100%; height: 42px; }
+      .message { max-width: 95%; }
+      .message.user { margin-left: 10px; }
+      .message.assistant { margin-right: 10px; }
     }
   </style>
 </head>
 <body>
   <div class="shell">
     <aside>
-      <div class="section">
+      <div class="aside-header">
         <div class="row">
-          <h1>Agent Runs</h1>
-          <button id="refreshBtn" class="secondary" type="button">刷新</button>
+          <h1>
+            <span class="icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            </span>
+            Agent Runs
+          </h1>
+          <div class="header-buttons">
+            <button id="themeToggleBtn" class="secondary icon-btn" type="button" title="切换主题"></button>
+            <button id="refreshBtn" class="secondary" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              刷新
+            </button>
+          </div>
         </div>
       </div>
-      <div class="section">
+      <div class="aside-section">
         <h2>运行设置</h2>
         <label>
           自主等级
@@ -346,48 +1125,61 @@
           <input id="workspaceScope" value=".">
         </label>
       </div>
-      <div class="section">
+      <div class="aside-section" style="padding-bottom: 8px;">
         <h2>Run 列表</h2>
+      </div>
+      <div class="aside-scroll">
         <div id="runList" class="run-list"></div>
       </div>
     </aside>
 
-    <main class="workspace">
-      <div class="section">
-        <div class="row">
+    <main>
+      <div class="main-header">
+        <div class="header-container">
           <div>
             <h1 id="selectedTitle">新对话</h1>
-            <div id="selectedMeta" class="muted"></div>
+            <div id="selectedMeta" class="meta"></div>
           </div>
-          <div class="row">
-            <button id="newChatBtn" class="secondary" type="button">新对话</button>
+          <div class="actions">
+            <button id="newChatBtn" class="secondary" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              新对话
+            </button>
             <span id="selectedStatus" class="badge">idle</span>
           </div>
         </div>
       </div>
       <div class="conversation">
         <div id="timeline" class="timeline">
-          <div class="empty">输入消息开始多轮对话</div>
+          <div class="empty">
+            <div class="empty-icon">💬</div>
+            <div class="empty-text">输入消息开始多轮对话</div>
+          </div>
         </div>
       </div>
       <form id="chatForm" class="composer">
-        <textarea id="chatInput" class="chat-input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" required></textarea>
-        <button id="sendBtn" type="submit">发送</button>
+        <div class="composer-container">
+          <textarea id="chatInput" class="chat-input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" required></textarea>
+          <button id="sendBtn" type="submit">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            发送
+          </button>
+        </div>
       </form>
     </main>
 
     <section class="detail">
-      <div class="section">
+      <div class="detail-section">
         <h2>Run 配置</h2>
         <div id="runConfig" class="kv"></div>
       </div>
-      <div class="section">
+      <div class="detail-section">
         <h2>工具执行结果</h2>
-        <div id="toolCalls" class="timeline"></div>
+        <div id="toolCalls" class="detail-timeline"></div>
       </div>
-      <div class="section">
+      <div class="detail-section">
         <h2>审计事件</h2>
-        <div id="auditEvents" class="timeline"></div>
+        <div id="auditEvents" class="detail-timeline"></div>
       </div>
     </section>
   </div>
@@ -411,7 +1203,7 @@
     let selectedSessionId = "";
     let autoSelectLatest = true;
     let currentRuns = [];
-    const collapsedSessions = new Set();
+    const expandedSessions = new Set();
     let eventSource = null;
 
     async function requestJSON(url, options) {
@@ -434,41 +1226,42 @@
     function renderRuns(runs) {
       runListEl.innerHTML = "";
       if (runs.length === 0) {
-        runListEl.innerHTML = '<div class="empty">暂无 run</div>';
+        runListEl.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">暂无 run</div></div>';
         return;
       }
       for (const session of groupRunsBySession(runs)) {
         const group = document.createElement("div");
-        group.className = "session-group";
-        const isCollapsed = collapsedSessions.has(session.id);
-
+        const isExpanded = expandedSessions.has(session.id);
+        group.className = "session-group" + (!isExpanded ? " collapsed" : "");
+ 
+        const head = document.createElement("div");
+        head.className = "session-head";
+ 
+        const toggleButton = document.createElement("button");
+        toggleButton.className = "toggle-session";
+        toggleButton.type = "button";
+        toggleButton.setAttribute("aria-label", isExpanded ? "收起对话" : "展开对话");
+        toggleButton.setAttribute("aria-expanded", String(isExpanded));
+        toggleButton.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+        toggleButton.addEventListener("click", () => toggleSession(session.id));
+ 
         const sessionButton = document.createElement("button");
         sessionButton.type = "button";
         sessionButton.className = "session-button" + (session.id === selectedSessionId ? " active" : "");
         sessionButton.innerHTML = `
           <div class="row">
-            <strong>${escapeHTML(session.title)}</strong>
+            <span class="title">${escapeHTML(session.title)}</span>
             <span class="badge ${session.latest.status}">${escapeHTML(session.latest.status)}</span>
           </div>
-          <div class="muted">${session.runs.length} runs · ${new Date(session.latest.updated_at).toLocaleString()}</div>
+          <div class="meta">${session.runs.length} runs · ${new Date(session.latest.updated_at).toLocaleString()}</div>
         `;
         sessionButton.addEventListener("click", () => selectRun(session.latest.id));
-
-        const toggleButton = document.createElement("button");
-        toggleButton.className = "toggle-session";
-        toggleButton.type = "button";
-        toggleButton.setAttribute("aria-label", isCollapsed ? "展开对话" : "收起对话");
-        toggleButton.setAttribute("aria-expanded", String(!isCollapsed));
-        toggleButton.textContent = isCollapsed ? "▸" : "▾";
-        toggleButton.addEventListener("click", () => toggleSession(session.id));
-
-        const head = document.createElement("div");
-        head.className = "session-head";
+ 
         head.appendChild(toggleButton);
         head.appendChild(sessionButton);
         group.appendChild(head);
-
-        if (!isCollapsed) {
+ 
+        if (isExpanded) {
           const runItems = document.createElement("div");
           runItems.className = "session-runs";
           for (const run of session.runs) {
@@ -476,11 +1269,11 @@
             button.type = "button";
             button.className = "run-item" + (run.id === selectedRunId ? " active" : "");
             button.innerHTML = `
-              <div class="row">
-                <span>${escapeHTML(shortText(run.goal, 34))}</span>
+              <div class="run-goal" title="${escapeHTML(run.goal)}">${escapeHTML(run.goal)}</div>
+              <div class="run-meta row">
+                <span class="time">${formatTimeShort(run.created_at)}</span>
                 <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
               </div>
-              <div class="muted">${new Date(run.created_at).toLocaleString()}</div>
             `;
             button.addEventListener("click", () => selectRun(run.id));
             runItems.appendChild(button);
@@ -490,12 +1283,12 @@
         runListEl.appendChild(group);
       }
     }
-
+ 
     function toggleSession(sessionId) {
-      if (collapsedSessions.has(sessionId)) {
-        collapsedSessions.delete(sessionId);
+      if (expandedSessions.has(sessionId)) {
+        expandedSessions.delete(sessionId);
       } else {
-        collapsedSessions.add(sessionId);
+        expandedSessions.add(sessionId);
       }
       renderRuns(currentRuns);
     }
@@ -524,6 +1317,9 @@
         eventSource.close();
       }
       await loadSnapshot(runId);
+      if (selectedSessionId) {
+        expandedSessions.add(selectedSessionId);
+      }
       eventSource = new EventSource(`/api/runs/${runId}/events`);
       eventSource.onmessage = () => loadSnapshot(runId).then(loadRuns);
     }
@@ -551,11 +1347,11 @@
       selectedStatusEl.className = `badge ${run.status}`;
 
       runConfigEl.innerHTML = `
-        <div>Autonomy</div><div>${escapeHTML(run.autonomy_level)}</div>
-        <div>Tools</div><div>${escapeHTML((run.enabled_tools || []).join(", ") || "none")}</div>
-        <div>Scope</div><div>${escapeHTML(run.workspace_scope)}</div>
-        <div>Owner</div><div>${escapeHTML(run.owner_id)}</div>
-        <div>Session</div><div>${escapeHTML(run.session_id)}</div>
+        <span class="key">Autonomy</span><span class="value">${escapeHTML(run.autonomy_level)}</span>
+        <span class="key">Tools</span><span class="value">${escapeHTML((run.enabled_tools || []).join(", ") || "none")}</span>
+        <span class="key">Scope</span><span class="value">${escapeHTML(run.workspace_scope)}</span>
+        <span class="key">Owner</span><span class="value">${escapeHTML(run.owner_id)}</span>
+        <span class="key">Session</span><span class="value">${escapeHTML(run.session_id)}</span>
       `;
 
       renderToolCalls(snapshot.tool_calls || []);
@@ -566,14 +1362,14 @@
       timelineEl.innerHTML = "";
       const runs = snapshot.runs || [];
       if (runs.length === 0) {
-        timelineEl.innerHTML = '<div class="empty">输入消息开始多轮对话</div>';
+        timelineEl.innerHTML = '<div class="empty"><div class="empty-icon">💬</div><div class="empty-text">输入消息开始多轮对话</div></div>';
         return;
       }
       for (const item of runs) {
         const run = item.run;
         const user = document.createElement("div");
         user.className = "message user";
-        user.textContent = run.goal;
+        user.innerHTML = `<div class="msg-content">${escapeHTML(run.goal)}</div>`;
         timelineEl.appendChild(user);
 
         const answer = latestResponse(item.steps || []);
@@ -581,28 +1377,53 @@
           const assistant = document.createElement("div");
           assistant.className = "message assistant";
           assistant.innerHTML = `
-            <div class="row">
-              <h3>assistant</h3>
+            <div class="msg-header">
+              <span class="avatar">AI</span>
+              <h3>Assistant</h3>
               <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
             </div>
-            ${answer.reasoning_summary ? `<p class="muted">${escapeHTML(answer.reasoning_summary)}</p>` : ""}
-            <pre>${escapeHTML(formatMaybeJSON(answer.model_output))}</pre>
+            ${answer.reasoning_summary ? `
+              <details class="reasoning-details" open>
+                <summary>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  思考过程 (Reasoning Process)
+                </summary>
+                <div class="reasoning-content">${escapeHTML(answer.reasoning_summary)}</div>
+              </details>
+            ` : ""}
+            <div class="code-wrapper">
+              <div class="code-header">
+                <span class="code-lang">回复内容 (Response)</span>
+                <button class="copy-code-btn" onclick="copyTextToClipboard(this)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 2px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  复制
+                </button>
+              </div>
+              <pre>${escapeHTML(formatMaybeJSON(answer.model_output))}</pre>
+            </div>
           `;
           timelineEl.appendChild(assistant);
         } else {
           const pending = document.createElement("div");
           pending.className = "message assistant";
           pending.innerHTML = `
-            <div class="row">
-              <h3>assistant</h3>
+            <div class="msg-header">
+              <span class="avatar">AI</span>
+              <h3>Assistant</h3>
               <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
             </div>
-            <p class="muted">等待 AI 回复</p>
+            <div class="pending-reply">
+              <div class="dot-pulse">
+                <span></span><span></span><span></span>
+              </div>
+              <span class="muted">等待 AI 回复...</span>
+            </div>
           `;
           timelineEl.appendChild(pending);
         }
       }
-      timelineEl.scrollIntoView({ block: "end" });
+      const conversation = document.querySelector(".conversation");
+      if (conversation) conversation.scrollTop = conversation.scrollHeight;
     }
 
     function latestResponse(steps) {
@@ -617,20 +1438,37 @@
     function renderToolCalls(calls) {
       toolCallsEl.innerHTML = "";
       if (calls.length === 0) {
-        toolCallsEl.innerHTML = '<div class="empty">暂无工具调用</div>';
+        toolCallsEl.innerHTML = '<div class="empty"><div class="empty-icon">🔧</div><div class="empty-text">暂无工具调用</div></div>';
         return;
       }
       for (const call of calls) {
         const item = document.createElement("div");
         item.className = "item";
         item.innerHTML = `
-          <div class="row">
-            <h3>${escapeHTML(call.tool_name)}</h3>
-            <span class="badge">${escapeHTML(call.policy_decision)}</span>
+          <div class="item-header">
+            <h3 class="tool-name">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+              ${escapeHTML(call.tool_name)}
+            </h3>
+            <span class="badge decision-${call.policy_decision.toLowerCase()}">${escapeHTML(call.policy_decision)}</span>
           </div>
-          <div class="muted">${escapeHTML(call.risk_level)} · ${escapeHTML(call.status)}</div>
-          <pre>${escapeHTML(formatMaybeJSON(call.arguments_json))}</pre>
-          <pre>${escapeHTML(formatMaybeJSON(call.result_json || call.error || ""))}</pre>
+          <div class="item-meta">风险等级: ${escapeHTML(call.risk_level)} · 状态: ${escapeHTML(call.status)}</div>
+          
+          <div class="code-wrapper small">
+            <div class="code-header">
+              <span class="code-lang">参数 (Arguments)</span>
+              <button class="copy-code-btn" onclick="copyTextToClipboard(this)">复制</button>
+            </div>
+            <pre>${escapeHTML(formatMaybeJSON(call.arguments_json))}</pre>
+          </div>
+          
+          <div class="code-wrapper small">
+            <div class="code-header">
+              <span class="code-lang">结果 (Result)</span>
+              <button class="copy-code-btn" onclick="copyTextToClipboard(this)">复制</button>
+            </div>
+            <pre>${escapeHTML(formatMaybeJSON(call.result_json || call.error || ""))}</pre>
+          </div>
         `;
         toolCallsEl.appendChild(item);
       }
@@ -639,19 +1477,29 @@
     function renderAudit(events) {
       auditEventsEl.innerHTML = "";
       if (events.length === 0) {
-        auditEventsEl.innerHTML = '<div class="empty">暂无审计事件</div>';
+        auditEventsEl.innerHTML = '<div class="empty"><div class="empty-icon">📜</div><div class="empty-text">暂无审计事件</div></div>';
         return;
       }
       for (const event of events) {
         const item = document.createElement("div");
         item.className = "item";
         item.innerHTML = `
-          <div class="row">
-            <h3>${escapeHTML(event.action)}</h3>
-            <span class="badge">${escapeHTML(event.actor)}</span>
+          <div class="item-header">
+            <h3 class="event-action">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="M12 6v6l4 2"></path></svg>
+              ${escapeHTML(event.action)}
+            </h3>
+            <span class="badge actor-${event.actor.toLowerCase()}">${escapeHTML(event.actor)}</span>
           </div>
-          <div class="muted">${new Date(event.created_at).toLocaleString()}</div>
-          <pre>${escapeHTML(formatMaybeJSON(event.payload_json))}</pre>
+          <div class="item-meta">${new Date(event.created_at).toLocaleString()}</div>
+          
+          <div class="code-wrapper small">
+            <div class="code-header">
+              <span class="code-lang">载荷 (Payload)</span>
+              <button class="copy-code-btn" onclick="copyTextToClipboard(this)">复制</button>
+            </div>
+            <pre>${escapeHTML(formatMaybeJSON(event.payload_json))}</pre>
+          </div>
         `;
         auditEventsEl.appendChild(item);
       }
@@ -676,6 +1524,15 @@
     function shortText(value, length) {
       const text = String(value || "");
       return text.length > length ? text.slice(0, length - 1) + "…" : text;
+    }
+
+    function formatTimeShort(dateStr) {
+      const date = new Date(dateStr);
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const hh = String(date.getHours()).padStart(2, '0');
+      const mm = String(date.getMinutes()).padStart(2, '0');
+      return `${m}-${d} ${hh}:${mm}`;
     }
 
     chatFormEl.addEventListener("submit", async (event) => {
@@ -716,9 +1573,9 @@
       selectedStatusEl.textContent = "idle";
       selectedStatusEl.className = "badge";
       runConfigEl.innerHTML = "";
-      toolCallsEl.innerHTML = '<div class="empty">暂无工具调用</div>';
-      auditEventsEl.innerHTML = '<div class="empty">暂无审计事件</div>';
-      timelineEl.innerHTML = '<div class="empty">输入消息开始多轮对话</div>';
+      toolCallsEl.innerHTML = '<div class="empty"><div class="empty-icon">🔧</div><div class="empty-text">暂无工具调用</div></div>';
+      auditEventsEl.innerHTML = '<div class="empty"><div class="empty-icon">📜</div><div class="empty-text">暂无审计事件</div></div>';
+      timelineEl.innerHTML = '<div class="empty"><div class="empty-icon">💬</div><div class="empty-text">输入消息开始多轮对话</div></div>';
       renderRuns(currentRuns);
       chatInputEl.focus();
     }
@@ -729,6 +1586,67 @@
         chatFormEl.requestSubmit();
       }
     });
+
+    function copyTextToClipboard(btn) {
+      const wrapper = btn.closest('.code-wrapper');
+      const pre = wrapper.querySelector('pre');
+      const text = pre.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = `
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 2px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          已复制
+        `;
+        btn.style.color = 'var(--green)';
+        btn.style.borderColor = 'var(--green-border)';
+        setTimeout(() => {
+          btn.innerHTML = originalHTML;
+          btn.style.color = '';
+          btn.style.borderColor = '';
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy text: ', err);
+      });
+    }
+
+    // Theme Switcher Logic
+    const themeToggleBtn = document.getElementById("themeToggleBtn");
+    
+    function getPreferredTheme() {
+      const savedTheme = localStorage.getItem("theme");
+      if (savedTheme) {
+        return savedTheme;
+      }
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }
+    
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("theme", theme);
+      updateThemeIcon(theme);
+    }
+    
+    function updateThemeIcon(theme) {
+      if (theme === "dark") {
+        themeToggleBtn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+        `;
+        themeToggleBtn.setAttribute("title", "切换为亮色模式");
+      } else {
+        themeToggleBtn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        `;
+        themeToggleBtn.setAttribute("title", "切换为暗色模式");
+      }
+    }
+    
+    themeToggleBtn.addEventListener("click", () => {
+      const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+      setTheme(currentTheme === "dark" ? "light" : "dark");
+    });
+    
+    // Initialize Theme
+    setTheme(getPreferredTheme());
 
     refreshBtnEl.addEventListener("click", loadRuns);
     newChatBtnEl.addEventListener("click", resetConversation);
