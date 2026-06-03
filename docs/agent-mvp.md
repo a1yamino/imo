@@ -59,16 +59,34 @@ Dashboard 支持：
 - 查看每步 `reasoning_summary` 和模型决策 JSON。
 - 查看工具调用参数、Policy 决策、风险等级和结果。
 - 查看审计事件。
+- 通过 Stream 开关发送 `/stream on` 或 `/stream off`，切换当前 session 的 LLM streaming 请求模式。
 - 通过 SSE 观察 runtime event，并自动刷新当前选中的 run。
 
 当前 AI run 会执行：
 
 1. `queued -> running`
-2. 按 `session_id` 读取之前已完成 run 的 user/assistant 历史。
-3. 调用 OpenAI 兼容 Chat Completions 获取决策。
-4. 如果决策是 `tool_call`，先保存 model decision step，再执行工具，保存 tool call 和 observation step，并把 observation 交回模型。
-5. 如果决策是 `final` 或普通文本，保存 response step。
-6. `running -> completed`
+2. 如果用户输入是 runtime 斜杠命令，runtime 直接消费命令、写入审计和 response step，不调用 LLM。
+3. 普通对话按 `session_id` 读取之前已完成 run 的 user/assistant 历史。
+4. 读取 session runtime options，例如 `stream`，并调用 OpenAI 兼容 Chat Completions 获取决策。
+5. 如果决策是 `tool_call`，先保存 model decision step，再执行工具，保存 tool call 和 observation step，并把 observation 交回模型。
+6. 如果决策是 `final` 或普通文本，保存 response step。
+7. `running -> completed`
+
+## Runtime 斜杠命令
+
+斜杠命令是 agent runtime 的控制输入，不是前端私有状态。Dashboard 的 Stream 按钮只是发送同样的命令：
+
+```text
+/stream on
+/stream off
+/stream
+```
+
+- `/stream on`：把当前 session 的 `stream` runtime option 设为 `true`。
+- `/stream off`：把当前 session 的 `stream` runtime option 设为 `false`。
+- `/stream`：读取当前 session 的 stream 状态。
+
+stream option 存在 SQLite 的 `session_runtime_options` 表里，作用域是 session。普通对话 run 在调用 LLM 前读取该 option；当 `stream=true` 时，OpenAI 兼容 client 会发送 `"stream": true`，消费 SSE delta，并在 runtime 内聚合成完整回复再落库。当前前端仍通过 runtime event/SSE 观察 run 状态；逐 token delta 还没有暴露成 dashboard 事件。
 
 当前已注册的只读工具：
 
@@ -152,6 +170,8 @@ curl -s http://localhost:8080/api/runs/<run_id>
 curl -s http://localhost:8080/api/sessions/<session_id>
 ```
 
+返回的 `runtime_options.stream` 表示该 session 当前是否启用 LLM streaming 请求模式。
+
 查看细分资源：
 
 ```bash
@@ -169,14 +189,14 @@ curl -N http://localhost:8080/api/runs/<run_id>/events
 ## 代码结构
 
 - `main.go`：根入口，只负责调用 Web 应用启动逻辑。
-- `internal/agent/types.go`：agent run、step、tool call、audit、policy、event 类型。
+- `internal/agent/types.go`：agent run、step、tool call、audit、policy、event、session runtime option 类型。
 - `internal/agent/policy.go`：可配置自主等级的最小 Policy Engine。
-- `internal/agent/store.go`：SQLite schema 和持久化查询。
-- `internal/agent/service.go`：runtime command 消费、多轮 session 上下文组装、AI 对话 runtime、runtime event 发布。
+- `internal/agent/store.go`：SQLite schema、session runtime options 和持久化查询。
+- `internal/agent/service.go`：runtime command 消费、斜杠命令处理、多轮 session 上下文组装、AI 对话 runtime、runtime event 发布。
 - `internal/agent/tools.go`：Tool Registry 和只读 filesystem 工具。
 - `internal/agent/web_tools.go`：Serper 搜索 provider 和独立 HTTP fetch 工具。
-- `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client。
-- `internal/webapp/server.go`：配置加载、路由注册和静态页面嵌入。
+- `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client，支持普通 JSON 响应和 streaming SSE delta 聚合。
+- `internal/webapp/server.go`：路由注册和静态页面嵌入。
 - `internal/webapp/agent_api.go`：admin 页面和 run API。
 - `internal/webapp/assets/agent_admin.html`：管理员 Dashboard。
 - `docs/superpowers/plans/2026-06-01-general-agent-mvp.md`：实现计划。

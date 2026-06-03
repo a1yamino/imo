@@ -34,6 +34,12 @@ func TestDashboardServesRootAndAdmin(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), `"filesystem.list_dir", "filesystem.read_file", "web.search", "web.fetch"`) {
 				t.Fatal("response does not enable default chat tools")
 			}
+			if !strings.Contains(rec.Body.String(), `id="streamToggleBtn"`) {
+				t.Fatal("response does not contain stream toggle")
+			}
+			if !strings.Contains(rec.Body.String(), `sendSlashCommand(nextStreamEnabled ? "/stream on" : "/stream off")`) {
+				t.Fatal("stream toggle should send slash commands")
+			}
 			if strings.Contains(rec.Body.String(), "session.id !== selectedSessionId") {
 				t.Fatal("selected sessions should still be collapsible")
 			}

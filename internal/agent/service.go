@@ -16,6 +16,8 @@ type AgentStore interface {
 	GetRun(context.Context, string) (Run, error)
 	ListRuns(context.Context) ([]Run, error)
 	ListRunsBySession(context.Context, string) ([]Run, error)
+	GetSessionRuntimeOptions(context.Context, string) (SessionRuntimeOptions, error)
+	SetSessionRuntimeOptions(context.Context, SessionRuntimeOptions) (SessionRuntimeOptions, error)
 	UpdateRunStatus(context.Context, string, RunStatus) error
 	AppendStep(context.Context, Step) (Step, error)
 	SaveToolCall(context.Context, ToolCall) (ToolCall, error)
@@ -126,7 +128,11 @@ func (s *RunService) SessionSnapshot(ctx context.Context, sessionID string) (Ses
 		}
 		snapshots = append(snapshots, snapshot)
 	}
-	return SessionSnapshot{SessionID: sessionID, Runs: snapshots}, nil
+	options, err := s.store.GetSessionRuntimeOptions(ctx, sessionID)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	return SessionSnapshot{SessionID: sessionID, Runs: snapshots, RuntimeOptions: options}, nil
 }
 
 func (s *RunService) SubmitCommand(ctx context.Context, command RuntimeCommand) error {
@@ -205,21 +211,26 @@ func (s *RunService) executeConversationRun(ctx context.Context, runID string) {
 		Payload: "{}",
 	})
 
-	if s.llm == nil {
-		s.failRun(ctx, runID, errors.New("llm client is not configured"))
-		return
+	var response Step
+	if command, ok := parseSlashCommand(run.Goal); ok {
+		response, err = s.executeSlashCommand(ctx, run, command)
+	} else {
+		if s.llm == nil {
+			s.failRun(ctx, runID, errors.New("llm client is not configured"))
+			return
+		}
+		messages, err := s.conversationMessages(ctx, run)
+		if err != nil {
+			s.failRun(ctx, runID, err)
+			return
+		}
+		s.logger.Debug("agent context built",
+			"run_id", run.ID,
+			"session_id", run.SessionID,
+			"message_count", len(messages),
+		)
+		response, err = s.runAgentLoop(ctx, run, messages)
 	}
-	messages, err := s.conversationMessages(ctx, run)
-	if err != nil {
-		s.failRun(ctx, runID, err)
-		return
-	}
-	s.logger.Debug("agent context built",
-		"run_id", run.ID,
-		"session_id", run.SessionID,
-		"message_count", len(messages),
-	)
-	response, err := s.runAgentLoop(ctx, run, messages)
 	if err != nil {
 		s.failRun(ctx, runID, err)
 		return
@@ -254,9 +265,13 @@ func (s *RunService) executeConversationRun(ctx context.Context, runID string) {
 }
 
 func (s *RunService) runAgentLoop(ctx context.Context, run Run, messages []LLMMessage) (Step, error) {
+	options, err := s.store.GetSessionRuntimeOptions(ctx, run.SessionID)
+	if err != nil {
+		return Step{}, err
+	}
 	for index := 1; index <= 8; index++ {
 		llmStarted := time.Now()
-		reply, err := s.llm.Complete(ctx, LLMRequest{Messages: messages})
+		reply, err := s.llm.Complete(ctx, LLMRequest{Messages: messages, Stream: options.Stream})
 		if err != nil {
 			return Step{}, err
 		}
@@ -342,6 +357,86 @@ func (s *RunService) runAgentLoop(ctx context.Context, run Run, messages []LLMMe
 		}
 	}
 	return Step{}, errors.New("agent loop exceeded maximum steps")
+}
+
+type slashCommand struct {
+	Name          string
+	StreamEnabled *bool
+}
+
+func parseSlashCommand(goal string) (slashCommand, bool) {
+	fields := strings.Fields(strings.TrimSpace(goal))
+	if len(fields) == 0 || !strings.HasPrefix(fields[0], "/") {
+		return slashCommand{}, false
+	}
+	if strings.EqualFold(fields[0], "/stream") {
+		command := slashCommand{Name: "stream"}
+		if len(fields) >= 2 {
+			switch strings.ToLower(fields[1]) {
+			case "on", "true", "1", "enable", "enabled":
+				enabled := true
+				command.StreamEnabled = &enabled
+			case "off", "false", "0", "disable", "disabled":
+				enabled := false
+				command.StreamEnabled = &enabled
+			}
+		}
+		return command, true
+	}
+	return slashCommand{}, false
+}
+
+func (s *RunService) executeSlashCommand(ctx context.Context, run Run, command slashCommand) (Step, error) {
+	switch command.Name {
+	case "stream":
+		options, err := s.store.GetSessionRuntimeOptions(ctx, run.SessionID)
+		if err != nil {
+			return Step{}, err
+		}
+		action := "runtime_option_read"
+		if command.StreamEnabled != nil {
+			options.Stream = *command.StreamEnabled
+			options, err = s.store.SetSessionRuntimeOptions(ctx, options)
+			if err != nil {
+				return Step{}, err
+			}
+			action = "runtime_option_updated"
+		}
+		state := "off"
+		if options.Stream {
+			state = "on"
+		}
+		_ = s.store.SaveAuditEvent(ctx, AuditEvent{
+			OwnerID: run.OwnerID,
+			RunID:   run.ID,
+			Actor:   "user",
+			Action:  action,
+			Payload: mustJSON(map[string]any{"option": "stream", "value": options.Stream}),
+		})
+		s.logger.Info("runtime option handled",
+			"run_id", run.ID,
+			"session_id", run.SessionID,
+			"option", "stream",
+			"value", options.Stream,
+			"action", action,
+		)
+		step, err := s.store.AppendStep(ctx, Step{
+			RunID:            run.ID,
+			Index:            1,
+			Type:             StepResponse,
+			Status:           StepCompleted,
+			ModelInput:       run.Goal,
+			ModelOutput:      fmt.Sprintf("stream %s", state),
+			ReasoningSummary: "Handled a runtime slash command without calling the LLM.",
+		})
+		if err != nil {
+			return Step{}, err
+		}
+		s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: run.ID, Data: step})
+		return step, nil
+	default:
+		return Step{}, fmt.Errorf("unsupported slash command: /%s", command.Name)
+	}
 }
 
 func (s *RunService) executeToolDecision(ctx context.Context, run Run, step Step, decision agentDecision) (string, error) {

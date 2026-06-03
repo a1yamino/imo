@@ -115,6 +115,11 @@ func (s *SQLiteAgentStore) init(ctx context.Context) error {
 			created_at TEXT NOT NULL,
 			FOREIGN KEY(run_id) REFERENCES runs(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS session_runtime_options (
+			session_id TEXT PRIMARY KEY,
+			stream_enabled INTEGER NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
@@ -168,6 +173,52 @@ func (s *SQLiteAgentStore) CreateRun(ctx context.Context, req CreateRunRequest) 
 		return Run{}, err
 	}
 	return run, nil
+}
+
+func (s *SQLiteAgentStore) GetSessionRuntimeOptions(ctx context.Context, sessionID string) (SessionRuntimeOptions, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return SessionRuntimeOptions{}, errors.New("session_id is required")
+	}
+	var streamEnabled int
+	var updatedAt string
+	err := s.db.QueryRowContext(ctx, `SELECT stream_enabled, updated_at
+		FROM session_runtime_options WHERE session_id = ?`, sessionID).Scan(&streamEnabled, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SessionRuntimeOptions{SessionID: sessionID, Stream: false}, nil
+	}
+	if err != nil {
+		return SessionRuntimeOptions{}, err
+	}
+	return SessionRuntimeOptions{
+		SessionID: sessionID,
+		Stream:    streamEnabled == 1,
+		UpdatedAt: parseTime(updatedAt),
+	}, nil
+}
+
+func (s *SQLiteAgentStore) SetSessionRuntimeOptions(ctx context.Context, options SessionRuntimeOptions) (SessionRuntimeOptions, error) {
+	options.SessionID = strings.TrimSpace(options.SessionID)
+	if options.SessionID == "" {
+		return SessionRuntimeOptions{}, errors.New("session_id is required")
+	}
+	now := time.Now().UTC()
+	options.UpdatedAt = now
+	streamEnabled := 0
+	if options.Stream {
+		streamEnabled = 1
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO session_runtime_options (
+		session_id, stream_enabled, updated_at
+	) VALUES (?, ?, ?)
+	ON CONFLICT(session_id) DO UPDATE SET
+		stream_enabled = excluded.stream_enabled,
+		updated_at = excluded.updated_at`,
+		options.SessionID, streamEnabled, formatTime(now))
+	if err != nil {
+		return SessionRuntimeOptions{}, err
+	}
+	return options, nil
 }
 
 func (s *SQLiteAgentStore) GetRun(ctx context.Context, id string) (Run, error) {

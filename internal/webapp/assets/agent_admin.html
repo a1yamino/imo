@@ -651,6 +651,17 @@
       gap: 12px;
     }
 
+    .stream-toggle {
+      min-width: 116px;
+      justify-content: center;
+    }
+
+    .stream-toggle.active {
+      background: var(--green-light);
+      color: var(--green);
+      border-color: var(--green-border);
+    }
+
     .conversation {
       flex: 1;
       overflow-y: auto;
@@ -1141,6 +1152,10 @@
             <div id="selectedMeta" class="meta"></div>
           </div>
           <div class="actions">
+            <button id="streamToggleBtn" class="secondary stream-toggle" type="button" aria-pressed="false" title="通过 /stream on 或 /stream off 切换">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h5"/><path d="M4 12h9"/><path d="M4 7h16"/><path d="M14 17h6"/></svg>
+              <span>Stream off</span>
+            </button>
             <button id="newChatBtn" class="secondary" type="button">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               新对话
@@ -1198,10 +1213,12 @@
     const sendBtnEl = document.getElementById("sendBtn");
     const refreshBtnEl = document.getElementById("refreshBtn");
     const newChatBtnEl = document.getElementById("newChatBtn");
+    const streamToggleBtnEl = document.getElementById("streamToggleBtn");
 
     let selectedRunId = "";
     let selectedSessionId = "";
     let autoSelectLatest = true;
+    let streamEnabled = false;
     let currentRuns = [];
     const expandedSessions = new Set();
     let eventSource = null;
@@ -1335,6 +1352,8 @@
     async function loadSession(sessionId) {
       const snapshot = await requestJSON(`/api/sessions/${sessionId}`);
       selectedSessionId = snapshot.session_id;
+      streamEnabled = Boolean(snapshot.runtime_options && snapshot.runtime_options.stream);
+      updateStreamToggle();
       renderSession(snapshot);
     }
 
@@ -1535,14 +1554,8 @@
       return `${m}-${d} ${hh}:${mm}`;
     }
 
-    chatFormEl.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const content = chatInputEl.value.trim();
-      if (!content || sendBtnEl.disabled) {
-        return;
-      }
-      sendBtnEl.disabled = true;
-      const run = await requestJSON("/api/runs", {
+    async function createRun(content) {
+      return requestJSON("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1552,7 +1565,21 @@
           workspace_scope: document.getElementById("workspaceScope").value.trim() || ".",
           enabled_tools: ["filesystem.list_dir", "filesystem.read_file", "web.search", "web.fetch"]
         })
-      }).finally(() => {
+      });
+    }
+
+    async function sendSlashCommand(content) {
+      return createRun(content);
+    }
+
+    chatFormEl.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const content = chatInputEl.value.trim();
+      if (!content || sendBtnEl.disabled) {
+        return;
+      }
+      sendBtnEl.disabled = true;
+      const run = await createRun(content).finally(() => {
         sendBtnEl.disabled = false;
       });
       chatInputEl.value = "";
@@ -1560,10 +1587,34 @@
       await loadRuns();
     });
 
+    streamToggleBtnEl.addEventListener("click", async () => {
+      if (streamToggleBtnEl.disabled) {
+        return;
+      }
+      const nextStreamEnabled = !streamEnabled;
+      streamToggleBtnEl.disabled = true;
+      const run = await sendSlashCommand(nextStreamEnabled ? "/stream on" : "/stream off").finally(() => {
+        streamToggleBtnEl.disabled = false;
+      });
+      streamEnabled = nextStreamEnabled;
+      updateStreamToggle();
+      await selectRun(run.id);
+      await loadRuns();
+    });
+
+    function updateStreamToggle() {
+      streamToggleBtnEl.classList.toggle("active", streamEnabled);
+      streamToggleBtnEl.setAttribute("aria-pressed", String(streamEnabled));
+      const label = streamToggleBtnEl.querySelector("span");
+      if (label) label.textContent = streamEnabled ? "Stream on" : "Stream off";
+    }
+
     function resetConversation() {
       selectedRunId = "";
       selectedSessionId = "";
       autoSelectLatest = false;
+      streamEnabled = false;
+      updateStreamToggle();
       if (eventSource) {
         eventSource.close();
         eventSource = null;
@@ -1650,6 +1701,7 @@
 
     refreshBtnEl.addEventListener("click", loadRuns);
     newChatBtnEl.addEventListener("click", resetConversation);
+    updateStreamToggle();
     loadRuns();
     chatInputEl.focus();
   </script>

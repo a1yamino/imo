@@ -134,6 +134,99 @@ func TestRunServiceCarriesSessionHistoryAcrossTurns(t *testing.T) {
 	}
 }
 
+func TestRunServiceAppliesStreamSlashCommandToSession(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	llm := &fakeLLMClient{response: `{"type":"final","content":"streamed answer"}`}
+	service := NewRunService(store, PolicyEngine{}, llm)
+	commandRun, err := service.CreateRun(ctx, CreateRunRequest{Goal: "/stream on"})
+	if err != nil {
+		t.Fatalf("CreateRun command: %v", err)
+	}
+	if err := service.StartRun(ctx, commandRun.ID); err != nil {
+		t.Fatalf("StartRun command: %v", err)
+	}
+
+	commandSnapshot := waitForRunStatus(t, service, commandRun.ID, RunCompleted)
+	if len(llm.requests) != 0 {
+		t.Fatalf("slash command called llm %d times, want 0", len(llm.requests))
+	}
+	if got := latestAssistantMessage(commandSnapshot.Steps); !strings.Contains(strings.ToLower(got), "stream on") {
+		t.Fatalf("slash command response=%q, want stream on confirmation", got)
+	}
+	auditActions := map[string]bool{}
+	for _, event := range commandSnapshot.AuditEvents {
+		auditActions[event.Action] = true
+	}
+	if !auditActions["runtime_option_updated"] {
+		t.Fatalf("runtime_option_updated audit event missing; got %v", auditActions)
+	}
+
+	chatRun, err := service.CreateRun(ctx, CreateRunRequest{SessionID: commandRun.SessionID, Goal: "正常对话"})
+	if err != nil {
+		t.Fatalf("CreateRun chat: %v", err)
+	}
+	if err := service.StartRun(ctx, chatRun.ID); err != nil {
+		t.Fatalf("StartRun chat: %v", err)
+	}
+	waitForRunStatus(t, service, chatRun.ID, RunCompleted)
+	if len(llm.requests) != 1 {
+		t.Fatalf("llm calls=%d, want 1", len(llm.requests))
+	}
+	if !llm.lastRequest.Stream {
+		t.Fatalf("llm request stream=false, want true")
+	}
+}
+
+func TestRunServiceCanDisableStreamWithSlashCommand(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	llm := &fakeLLMClient{response: `{"type":"final","content":"plain answer"}`}
+	service := NewRunService(store, PolicyEngine{}, llm)
+	onRun, err := service.CreateRun(ctx, CreateRunRequest{Goal: "/stream on"})
+	if err != nil {
+		t.Fatalf("CreateRun on: %v", err)
+	}
+	if err := service.StartRun(ctx, onRun.ID); err != nil {
+		t.Fatalf("StartRun on: %v", err)
+	}
+	waitForRunStatus(t, service, onRun.ID, RunCompleted)
+
+	offRun, err := service.CreateRun(ctx, CreateRunRequest{SessionID: onRun.SessionID, Goal: "/stream off"})
+	if err != nil {
+		t.Fatalf("CreateRun off: %v", err)
+	}
+	if err := service.StartRun(ctx, offRun.ID); err != nil {
+		t.Fatalf("StartRun off: %v", err)
+	}
+	waitForRunStatus(t, service, offRun.ID, RunCompleted)
+
+	chatRun, err := service.CreateRun(ctx, CreateRunRequest{SessionID: onRun.SessionID, Goal: "正常对话"})
+	if err != nil {
+		t.Fatalf("CreateRun chat: %v", err)
+	}
+	if err := service.StartRun(ctx, chatRun.ID); err != nil {
+		t.Fatalf("StartRun chat: %v", err)
+	}
+	waitForRunStatus(t, service, chatRun.ID, RunCompleted)
+	if len(llm.requests) != 1 {
+		t.Fatalf("llm calls=%d, want 1", len(llm.requests))
+	}
+	if llm.lastRequest.Stream {
+		t.Fatalf("llm request stream=true, want false")
+	}
+}
+
 func TestRunServiceExecutesFilesystemToolDecision(t *testing.T) {
 	ctx := context.Background()
 	workspace := t.TempDir()

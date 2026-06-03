@@ -102,6 +102,7 @@ type LLMRequest struct {
 	SystemPrompt string
 	UserPrompt   string
 	Messages     []LLMMessage
+	Stream       bool
 }
 
 type LLMResponse struct {
@@ -229,8 +230,18 @@ type RunSnapshot struct {
 // SessionSnapshot is the read model for a multi-turn conversation. Each user
 // turn is still a separate run, but all runs in one session form the chat state.
 type SessionSnapshot struct {
-	SessionID string        `json:"session_id"`
-	Runs      []RunSnapshot `json:"runs"`
+	SessionID      string                `json:"session_id"`
+	Runs           []RunSnapshot         `json:"runs"`
+	RuntimeOptions SessionRuntimeOptions `json:"runtime_options"`
+}
+
+// SessionRuntimeOptions are agent-runtime preferences scoped to a conversation.
+// Slash commands update these options; UI controls should send those commands
+// instead of keeping a separate frontend-only state.
+type SessionRuntimeOptions struct {
+	SessionID string    `json:"session_id"`
+	Stream    bool      `json:"stream"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // RuntimeEvent is the runtime's domain event envelope. The dashboard observes
