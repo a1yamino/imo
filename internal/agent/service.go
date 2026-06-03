@@ -272,7 +272,17 @@ func (s *RunService) runAgentLoop(ctx context.Context, run Run, messages []LLMMe
 	tools := s.llmToolsForRun(run)
 	for index := 1; index <= 8; index++ {
 		llmStarted := time.Now()
-		reply, err := s.llm.Complete(ctx, LLMRequest{Messages: messages, Tools: tools, Stream: options.Stream})
+		reply, err := s.llm.Complete(ctx, LLMRequest{
+			Messages: messages,
+			Tools:    tools,
+			Stream:   options.Stream,
+			OnDelta: func(delta LLMDelta) {
+				if delta.Content == "" {
+					return
+				}
+				s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventLLMResponseDelta, RunID: run.ID, Data: delta})
+			},
+		})
 		if err != nil {
 			return Step{}, err
 		}

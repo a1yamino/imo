@@ -83,7 +83,7 @@ func (c *OpenAICompatibleLLMClient) Complete(ctx context.Context, req LLMRequest
 		return LLMResponse{}, fmt.Errorf("chat completion HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 	if req.Stream {
-		return parseChatCompletionStream(resp.Body)
+		return parseChatCompletionStream(resp.Body, req.OnDelta)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -107,7 +107,7 @@ func (c *OpenAICompatibleLLMClient) Complete(ctx context.Context, req LLMRequest
 	return LLMResponse{Content: strings.TrimSpace(message.Content), ToolCalls: toolCalls}, nil
 }
 
-func parseChatCompletionStream(body io.Reader) (LLMResponse, error) {
+func parseChatCompletionStream(body io.Reader, onDelta func(LLMDelta)) (LLMResponse, error) {
 	scanner := bufio.NewScanner(body)
 	// Some providers emit larger JSON chunks than the default 64 KiB scanner cap.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -130,7 +130,12 @@ func parseChatCompletionStream(body io.Reader) (LLMResponse, error) {
 			return LLMResponse{}, fmt.Errorf("parse chat completion stream event: %w; raw=%s", err, data)
 		}
 		for _, choice := range event.Choices {
-			builder.WriteString(choice.Delta.Content)
+			if choice.Delta.Content != "" {
+				builder.WriteString(choice.Delta.Content)
+				if onDelta != nil {
+					onDelta(LLMDelta{Content: choice.Delta.Content})
+				}
+			}
 			for _, call := range choice.Delta.ToolCalls {
 				current := streamToolCalls[call.Index]
 				if current == nil {

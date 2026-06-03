@@ -60,7 +60,7 @@ Dashboard 支持：
 - 查看工具调用参数、Policy 决策、风险等级和结果。
 - 查看审计事件。
 - 通过 Stream 开关发送 `/stream on` 或 `/stream off`，切换当前 session 的 LLM streaming 请求模式。
-- 通过 SSE 观察 runtime event，并自动刷新当前选中的 run。
+- 通过 SSE 观察 runtime event；stream 模式下文本 delta 会实时追加到当前 Assistant 消息，完成后再用 snapshot 校准。
 
 当前 AI run 会执行：
 
@@ -86,7 +86,7 @@ Dashboard 支持：
 - `/stream off`：把当前 session 的 `stream` runtime option 设为 `false`。
 - `/stream`：读取当前 session 的 stream 状态。
 
-stream option 存在 SQLite 的 `session_runtime_options` 表里，作用域是 session。普通对话 run 在调用 LLM 前读取该 option；当 `stream=true` 时，OpenAI 兼容 client 会发送 `"stream": true`，消费 SSE delta，并在 runtime 内聚合成完整回复再落库。当前前端仍通过 runtime event/SSE 观察 run 状态；逐 token delta 还没有暴露成 dashboard 事件。
+stream option 存在 SQLite 的 `session_runtime_options` 表里，作用域是 session。普通对话 run 在调用 LLM 前读取该 option；当 `stream=true` 时，OpenAI 兼容 client 会发送 `"stream": true`。文本 delta 会通过 `llm_response_delta` runtime event 推给 Dashboard，前端即时追加显示；runtime 仍会聚合完整回复并在完成时写入 response step，用于审计和最终 snapshot 校准。工具调用 delta 当前仍在后端聚合成完整 `tool_calls` 后执行。
 
 当前已注册的只读工具：
 
@@ -185,7 +185,7 @@ curl -N http://localhost:8080/api/runs/<run_id>/events
 - `internal/agent/service.go`：runtime command 消费、斜杠命令处理、多轮 session 上下文组装、AI 对话 runtime、runtime event 发布。
 - `internal/agent/tools.go`：Tool Registry 和只读 filesystem 工具。
 - `internal/agent/web_tools.go`：Serper 搜索 provider 和独立 HTTP fetch 工具。
-- `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client，支持 native `tools/tool_calls`、普通 JSON 响应和 streaming SSE delta 聚合。
+- `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client，支持 native `tools/tool_calls`、普通 JSON 响应、streaming SSE delta 回调和最终聚合。
 - `internal/webapp/server.go`：路由注册和静态页面嵌入。
 - `internal/webapp/agent_api.go`：admin 页面和 run API。
 - `internal/webapp/assets/agent_admin.html`：管理员 Dashboard。

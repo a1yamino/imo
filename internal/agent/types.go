@@ -112,12 +112,17 @@ type LLMToolCall struct {
 	Arguments map[string]any `json:"arguments"`
 }
 
+type LLMDelta struct {
+	Content string `json:"content,omitempty"`
+}
+
 type LLMRequest struct {
 	SystemPrompt string
 	UserPrompt   string
 	Messages     []LLMMessage
 	Tools        []LLMToolSpec
 	Stream       bool
+	OnDelta      func(LLMDelta)
 }
 
 type LLMResponse struct {
@@ -149,6 +154,7 @@ type RuntimeEventType string
 const (
 	RuntimeEventRunCreated       RuntimeEventType = "run_created"
 	RuntimeEventRunStatusChanged RuntimeEventType = "run_status_changed"
+	RuntimeEventLLMResponseDelta RuntimeEventType = "llm_response_delta"
 	RuntimeEventStepFinished     RuntimeEventType = "step_finished"
 	RuntimeEventRunCompleted     RuntimeEventType = "run_completed"
 	RuntimeEventRunFailed        RuntimeEventType = "run_failed"

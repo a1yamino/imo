@@ -40,6 +40,18 @@ func TestDashboardServesRootAndAdmin(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), `sendSlashCommand(nextStreamEnabled ? "/stream on" : "/stream off")`) {
 				t.Fatal("stream toggle should send slash commands")
 			}
+			if !strings.Contains(rec.Body.String(), "appendStreamingDelta") {
+				t.Fatal("response does not support streaming response deltas")
+			}
+			if !strings.Contains(rec.Body.String(), `envelope.type === "llm_response_delta"`) {
+				t.Fatal("SSE handler should treat LLM response deltas separately")
+			}
+			if strings.Contains(rec.Body.String(), "renderRuns(currentRuns);\n      if (selectedSessionId)") {
+				t.Fatal("streaming deltas should not re-render the full run list or session")
+			}
+			if !strings.Contains(rec.Body.String(), "streamingResponses.has(runId) && !terminalEvent") {
+				t.Fatal("streaming runs should ignore non-terminal refresh events")
+			}
 			if strings.Contains(rec.Body.String(), "session.id !== selectedSessionId") {
 				t.Fatal("selected sessions should still be collapsible")
 			}

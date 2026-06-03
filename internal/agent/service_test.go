@@ -227,6 +227,62 @@ func TestRunServiceCanDisableStreamWithSlashCommand(t *testing.T) {
 	}
 }
 
+func TestRunServicePublishesLLMResponseDeltasWhenStreaming(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	llm := &fakeLLMClient{
+		response:   `{"type":"final","content":"hello world"}`,
+		emitDeltas: []string{"hello ", "world"},
+	}
+	service := NewRunService(store, PolicyEngine{}, llm)
+	streamRun, err := service.CreateRun(ctx, CreateRunRequest{Goal: "/stream on"})
+	if err != nil {
+		t.Fatalf("CreateRun stream: %v", err)
+	}
+	if err := service.StartRun(ctx, streamRun.ID); err != nil {
+		t.Fatalf("StartRun stream: %v", err)
+	}
+	waitForRunStatus(t, service, streamRun.ID, RunCompleted)
+
+	run, err := service.CreateRun(ctx, CreateRunRequest{SessionID: streamRun.SessionID, Goal: "say hello"})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	events, cancel := service.ObserveRun(run.ID)
+	defer cancel()
+	if err := service.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	var streamed strings.Builder
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.Type == RuntimeEventLLMResponseDelta {
+				delta, ok := event.Data.(LLMDelta)
+				if !ok {
+					t.Fatalf("delta event data=%T, want LLMDelta", event.Data)
+				}
+				streamed.WriteString(delta.Content)
+			}
+			if event.Type == RuntimeEventRunCompleted {
+				if streamed.String() != "hello world" {
+					t.Fatalf("streamed=%q, want hello world", streamed.String())
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for stream events; streamed=%q", streamed.String())
+		}
+	}
+}
+
 func TestRunServiceExecutesFilesystemToolDecision(t *testing.T) {
 	ctx := context.Background()
 	workspace := t.TempDir()
@@ -491,6 +547,7 @@ type fakeLLMClient struct {
 	response        string
 	responses       []string
 	responseObjects []LLMResponse
+	emitDeltas      []string
 	lastRequest     LLMRequest
 	requests        []LLMRequest
 }
@@ -498,6 +555,11 @@ type fakeLLMClient struct {
 func (f *fakeLLMClient) Complete(ctx context.Context, req LLMRequest) (LLMResponse, error) {
 	f.lastRequest = req
 	f.requests = append(f.requests, req)
+	for _, content := range f.emitDeltas {
+		if req.OnDelta != nil {
+			req.OnDelta(LLMDelta{Content: content})
+		}
+	}
 	if len(f.responseObjects) > 0 {
 		response := f.responseObjects[0]
 		f.responseObjects = f.responseObjects[1:]

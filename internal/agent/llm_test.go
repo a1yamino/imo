@@ -23,6 +23,7 @@ func TestOpenAICompatibleLLMClientRequiresAPIKey(t *testing.T) {
 
 func TestOpenAICompatibleLLMClientSendsStreamAndParsesDeltas(t *testing.T) {
 	var requestBody chatCompletionRequest
+	var deltas []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -35,7 +36,13 @@ func TestOpenAICompatibleLLMClientSendsStreamAndParsesDeltas(t *testing.T) {
 	defer server.Close()
 
 	client := NewOpenAICompatibleLLMClient(server.Client(), "key", server.URL, "test-model")
-	response, err := client.Complete(context.Background(), LLMRequest{UserPrompt: "hello", Stream: true})
+	response, err := client.Complete(context.Background(), LLMRequest{
+		UserPrompt: "hello",
+		Stream:     true,
+		OnDelta: func(delta LLMDelta) {
+			deltas = append(deltas, delta.Content)
+		},
+	})
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -45,6 +52,9 @@ func TestOpenAICompatibleLLMClientSendsStreamAndParsesDeltas(t *testing.T) {
 	}
 	if response.Content != "hello world" {
 		t.Fatalf("content=%q, want hello world", response.Content)
+	}
+	if strings.Join(deltas, "") != "hello world" {
+		t.Fatalf("deltas=%q, want hello world", strings.Join(deltas, ""))
 	}
 }
 

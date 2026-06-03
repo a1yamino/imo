@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {
       /* Base values (Dark Theme by default) */
@@ -37,12 +38,12 @@
       --red-light: rgba(239, 68, 68, 0.15);
       --red-border: rgba(239, 68, 68, 0.3);
       --ink: #e2e8f0;
-      
+
       --shadow-sm: 0 1px 2px rgba(0,0,0,0.5);
       --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
       --shadow-lg: 0 12px 24px rgba(0,0,0,0.6);
       --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
-      
+
       --radius: 12px;
       --radius-sm: 8px;
       --radius-lg: 16px;
@@ -77,7 +78,7 @@
       --red-light: rgba(220, 38, 38, 0.08);
       --red-border: rgba(220, 38, 38, 0.25);
       --ink: #1f2937;
-      
+
       --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
       --shadow-md: 0 4px 12px rgba(0,0,0,0.05);
       --shadow-lg: 0 12px 24px rgba(0,0,0,0.08);
@@ -382,11 +383,11 @@
       color: var(--text);
       transform: none;
     }
-    
+
     .toggle-session svg {
       transition: transform 0.2s ease;
     }
-    
+
     .session-group.collapsed .toggle-session svg {
       transform: rotate(-90deg);
     }
@@ -411,7 +412,7 @@
       transform: none;
       box-shadow: none;
     }
-    
+
     .session-button.active {
       border-left-color: var(--blue);
       background: var(--blue-light);
@@ -445,7 +446,7 @@
       border-top: 1px solid var(--line-light);
       background: rgba(0, 0, 0, 0.05);
     }
-    
+
     [data-theme="light"] .session-runs {
       background: rgba(0, 0, 0, 0.02);
     }
@@ -471,7 +472,7 @@
       color: var(--text);
       transform: translateX(2px);
     }
-    
+
     .run-item.active {
       background: var(--blue-light);
       border-color: var(--blue-border);
@@ -498,7 +499,7 @@
       justify-content: space-between;
       width: 100%;
     }
-    
+
     .run-meta .time {
       font-size: 11px;
       color: var(--muted);
@@ -550,19 +551,19 @@
       border: 1px solid var(--blue-border);
       box-shadow: 0 0 8px rgba(59, 130, 246, 0.2);
     }
-    
+
     .badge.completed {
       background: var(--green-light);
       color: var(--green);
       border: 1px solid var(--green-border);
     }
-    
+
     .badge.failed, .badge.blocked {
       background: var(--red-light);
       color: var(--red);
       border: 1px solid var(--red-border);
     }
-    
+
     .badge.waiting_approval {
       background: var(--amber-light);
       color: var(--amber);
@@ -584,7 +585,7 @@
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.4; transform: scale(1.2); }
     }
-    
+
     @keyframes borderPulse {
       0%, 100% { border-color: var(--amber-border); }
       50% { border-color: var(--amber); }
@@ -603,7 +604,7 @@
       color: var(--green);
       border: 1px solid var(--green-border);
     }
-    
+
     .badge.decision-rejected, .badge.actor-agent {
       background: var(--red-light);
       color: var(--red);
@@ -724,7 +725,7 @@
       box-shadow: 0 4px 14px rgba(59, 130, 246, 0.25);
       margin-left: auto;
     }
-    
+
     [data-theme="light"] .message.user {
       background: linear-gradient(135deg, var(--blue), #3b82f6);
     }
@@ -775,6 +776,118 @@
       color: var(--text);
     }
 
+    .copy-msg-btn {
+      height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      box-shadow: none;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: var(--transition);
+    }
+    .copy-msg-btn:hover {
+      background: var(--panel-hover);
+      border-color: var(--text-secondary);
+      color: var(--text);
+      transform: none;
+      box-shadow: none;
+    }
+
+    /* Markdown Body Styling */
+    .markdown-body {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    .markdown-body p {
+      margin-bottom: 12px;
+    }
+    .markdown-body p:last-child {
+      margin-bottom: 0;
+    }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+      margin-top: 18px;
+      margin-bottom: 10px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .markdown-body h1 { font-size: 1.5em; border-bottom: 1px solid var(--line-light); padding-bottom: 6px; }
+    .markdown-body h2 { font-size: 1.3em; }
+    .markdown-body h3 { font-size: 1.15em; }
+
+    .markdown-body ul, .markdown-body ol {
+      margin-bottom: 12px;
+      padding-left: 20px;
+    }
+    .markdown-body li {
+      margin-bottom: 4px;
+    }
+    .markdown-body code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: var(--amber);
+    }
+    [data-theme="light"] .markdown-body code {
+      background: rgba(0, 0, 0, 0.05);
+      color: #b45309;
+    }
+    .markdown-body pre {
+      background: #0f141c !important;
+      border: 1px solid rgba(255, 255, 255, 0.05) !important;
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      margin: 12px 0;
+      overflow-x: auto;
+    }
+    .markdown-body pre code {
+      background: transparent !important;
+      padding: 0;
+      color: #e2e8f0;
+      font-size: 12px;
+      border-radius: 0;
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    .markdown-body blockquote {
+      border-left: 4px solid var(--blue);
+      padding-left: 14px;
+      color: var(--text-secondary);
+      margin: 12px 0;
+      font-style: italic;
+    }
+    .markdown-body a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+    .markdown-body a:hover {
+      text-decoration: underline;
+    }
+    .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+    }
+    .markdown-body th, .markdown-body td {
+      border: 1px solid var(--line);
+      padding: 8px 12px;
+      text-align: left;
+    }
+    .markdown-body th {
+      background: var(--line-light);
+      font-weight: 600;
+    }
+
     /* 思维链 - reasoning-details styling */
     .reasoning-details {
       margin-bottom: 14px;
@@ -784,7 +897,7 @@
       overflow: hidden;
       transition: var(--transition);
     }
-    
+
     .reasoning-details summary {
       padding: 10px 14px;
       font-size: 12.5px;
@@ -797,15 +910,15 @@
       align-items: center;
       gap: 6px;
     }
-    
+
     .reasoning-details summary::marker {
       color: var(--blue);
     }
-    
+
     .reasoning-details[open] summary {
       border-bottom: 1px solid var(--blue-border);
     }
-    
+
     .reasoning-content {
       padding: 12px 14px;
       font-size: 12.5px;
@@ -823,7 +936,7 @@
       margin-top: 14px;
       box-shadow: var(--shadow-sm);
     }
-    
+
     .code-header {
       background: #171d26;
       padding: 8px 16px;
@@ -832,7 +945,7 @@
       justify-content: space-between;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
-    
+
     .code-lang {
       font-family: 'JetBrains Mono', monospace;
       font-size: 11px;
@@ -841,7 +954,7 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
-    
+
     .copy-code-btn {
       height: 24px;
       padding: 0 8px;
@@ -853,7 +966,7 @@
       box-shadow: none;
       font-weight: 500;
     }
-    
+
     .copy-code-btn:hover {
       background: rgba(255, 255, 255, 0.05);
       border-color: rgba(255, 255, 255, 0.2);
@@ -861,11 +974,11 @@
       transform: none;
       box-shadow: none;
     }
-    
+
     .code-wrapper pre {
       margin: 0 !important;
-      max-height: 350px;
-      overflow: auto;
+      max-height: none;
+      overflow: visible;
       background: transparent !important;
       border: none !important;
       color: #e2e8f0;
@@ -884,13 +997,13 @@
       padding-left: 38px;
       margin: 10px 0;
     }
-    
+
     .dot-pulse {
       display: flex;
       align-items: center;
       gap: 4px;
     }
-    
+
     .dot-pulse span {
       width: 6px;
       height: 6px;
@@ -898,10 +1011,10 @@
       background-color: var(--blue);
       animation: dotPulseKeyframe 1.4s infinite ease-in-out both;
     }
-    
+
     .dot-pulse span:nth-child(1) { animation-delay: -0.32s; }
     .dot-pulse span:nth-child(2) { animation-delay: -0.16s; }
-    
+
     @keyframes dotPulseKeyframe {
       0%, 80%, 100% { transform: scale(0); }
       40% { transform: scale(1); }
@@ -937,18 +1050,18 @@
       align-items: center;
       color: var(--text);
     }
-    
+
     .item-meta {
       font-size: 11px;
       color: var(--muted);
       margin-bottom: 12px;
       font-weight: 500;
     }
-    
+
     .code-wrapper.small .code-header {
       padding: 6px 12px;
     }
-    
+
     .code-wrapper.small pre {
       padding: 10px 12px;
       font-size: 11.5px;
@@ -1220,6 +1333,8 @@
     let autoSelectLatest = true;
     let streamEnabled = false;
     let currentRuns = [];
+    const streamingResponses = new Map();
+    const pendingStreamFlushes = new Set();
     const expandedSessions = new Set();
     let eventSource = null;
 
@@ -1250,10 +1365,10 @@
         const group = document.createElement("div");
         const isExpanded = expandedSessions.has(session.id);
         group.className = "session-group" + (!isExpanded ? " collapsed" : "");
- 
+
         const head = document.createElement("div");
         head.className = "session-head";
- 
+
         const toggleButton = document.createElement("button");
         toggleButton.className = "toggle-session";
         toggleButton.type = "button";
@@ -1261,7 +1376,7 @@
         toggleButton.setAttribute("aria-expanded", String(isExpanded));
         toggleButton.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
         toggleButton.addEventListener("click", () => toggleSession(session.id));
- 
+
         const sessionButton = document.createElement("button");
         sessionButton.type = "button";
         sessionButton.className = "session-button" + (session.id === selectedSessionId ? " active" : "");
@@ -1273,11 +1388,11 @@
           <div class="meta">${session.runs.length} runs · ${new Date(session.latest.updated_at).toLocaleString()}</div>
         `;
         sessionButton.addEventListener("click", () => selectRun(session.latest.id));
- 
+
         head.appendChild(toggleButton);
         head.appendChild(sessionButton);
         group.appendChild(head);
- 
+
         if (isExpanded) {
           const runItems = document.createElement("div");
           runItems.className = "session-runs";
@@ -1300,7 +1415,7 @@
         runListEl.appendChild(group);
       }
     }
- 
+
     function toggleSession(sessionId) {
       if (expandedSessions.has(sessionId)) {
         expandedSessions.delete(sessionId);
@@ -1338,14 +1453,245 @@
         expandedSessions.add(selectedSessionId);
       }
       eventSource = new EventSource(`/api/runs/${runId}/events`);
-      eventSource.onmessage = () => loadSnapshot(runId).then(loadRuns);
+      eventSource.onmessage = (event) => handleRunEvent(event, runId);
     }
 
-    async function loadSnapshot(runId) {
+    async function handleRunEvent(event, runId) {
+      let envelope;
+      try {
+        envelope = JSON.parse(event.data);
+      } catch {
+        await loadSnapshot(runId).then(loadRuns);
+        return;
+      }
+      if (envelope.type === "llm_response_delta") {
+        appendStreamingDelta(envelope.message);
+        return;
+      }
+      const terminalEvent = envelope.type === "run_completed" || envelope.type === "run_failed";
+      if (streamingResponses.has(runId) && !terminalEvent) {
+        await loadSnapshot(runId, true);
+        return;
+      }
+      if (!terminalEvent) {
+        await loadSnapshot(runId, true);
+        return;
+      }
+      await loadSnapshot(runId).then(loadRuns);
+    }
+
+    function parseStreamedJSON(raw) {
+      const startIdx = raw.indexOf('{');
+      if (startIdx === -1) {
+        if (raw.trim().startsWith("```")) {
+          return { content: "", reasoning: "" };
+        }
+        return { content: raw, reasoning: "" };
+      }
+
+      let jsonStr = raw.substring(startIdx);
+      let content = "";
+      let reasoning = "";
+
+      let i = 0;
+      while (i < jsonStr.length) {
+        if (jsonStr[i] === '"') {
+          let key = "";
+          i++;
+          while (i < jsonStr.length && jsonStr[i] !== '"') {
+            key += jsonStr[i];
+            i++;
+          }
+          i++;
+
+          while (i < jsonStr.length && jsonStr[i] !== ':') {
+            i++;
+          }
+          if (i >= jsonStr.length) break;
+          i++;
+
+          while (i < jsonStr.length && jsonStr[i] !== '"' && jsonStr[i] !== '[' && jsonStr[i] !== '{' && jsonStr[i] !== 't' && jsonStr[i] !== 'f' && jsonStr[i] !== 'n' && (jsonStr[i] < '0' || jsonStr[i] > '9')) {
+            i++;
+          }
+          if (i >= jsonStr.length) break;
+
+          if (jsonStr[i] === '"') {
+            let val = "";
+            i++;
+            while (i < jsonStr.length) {
+              if (jsonStr[i] === '\\') {
+                if (i + 1 < jsonStr.length) {
+                  const esc = jsonStr[i+1];
+                  if (esc === 'n') val += '\n';
+                  else if (esc === 't') val += '\t';
+                  else if (esc === 'r') val += '\r';
+                  else val += esc;
+                  i += 2;
+                } else {
+                  i++;
+                }
+              } else if (jsonStr[i] === '"') {
+                i++;
+                break;
+              } else {
+                val += jsonStr[i];
+                i++;
+              }
+            }
+            if (key === "content") content = val;
+            else if (key === "reasoning_summary") reasoning = val;
+          } else {
+            i++;
+          }
+        } else {
+          i++;
+        }
+      }
+
+      if (!content && !reasoning && startIdx > 10) {
+        return { content: raw, reasoning: "" };
+      }
+
+      return { content, reasoning };
+    }
+
+    function appendStreamingDelta(message) {
+      let runtimeEvent;
+      try {
+        runtimeEvent = JSON.parse(message);
+      } catch {
+        return;
+      }
+      const runId = runtimeEvent.run_id;
+      const content = runtimeEvent.data && runtimeEvent.data.content;
+      if (!runId || !content) {
+        return;
+      }
+      streamingResponses.set(runId, (streamingResponses.get(runId) || "") + content);
+      scheduleStreamingMessageUpdate(runId);
+    }
+
+    function scheduleStreamingMessageUpdate(runId) {
+      if (pendingStreamFlushes.has(runId)) {
+        return;
+      }
+      pendingStreamFlushes.add(runId);
+      const schedule = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 16));
+      schedule(() => {
+        pendingStreamFlushes.delete(runId);
+        updateStreamingMessage(runId);
+      });
+    }
+
+    function updateStreamingMessage(runId) {
+      const rawContent = streamingResponses.get(runId) || "";
+      const parsed = parseStreamedJSON(rawContent);
+
+      let assistant = timelineEl.querySelector(runDataSelector("stream", runId));
+      if (!assistant) {
+        assistant = timelineEl.querySelector(runDataSelector("pending", runId));
+        if (!assistant) {
+          return;
+        }
+        delete assistant.dataset.pendingRunId;
+        assistant.dataset.streamRunId = runId;
+        const pending = assistant.querySelector(".pending-reply");
+        if (pending) pending.remove();
+
+        // 创建直接放一个 markdown-body 的容器
+        const markdownBody = document.createElement("div");
+        markdownBody.className = "markdown-body";
+        markdownBody.dataset.streamOutput = "";
+        assistant.appendChild(markdownBody);
+
+        // 同时也把复制按钮加上
+        const header = assistant.querySelector(".msg-header");
+        if (header && !header.querySelector(".copy-msg-btn")) {
+          header.style.justifyContent = "space-between";
+          header.style.width = "100%";
+          header.style.display = "flex";
+          // 包裹原本内容
+          const leftRow = document.createElement("div");
+          leftRow.style.display = "flex";
+          leftRow.style.alignItems = "center";
+          leftRow.style.gap = "10px";
+          while (header.firstChild) {
+            leftRow.appendChild(header.firstChild);
+          }
+          header.appendChild(leftRow);
+
+          const copyBtn = document.createElement("button");
+          copyBtn.className = "copy-msg-btn";
+          copyBtn.title = "复制回复内容";
+          copyBtn.onclick = function() { copyMessageText(this); };
+          copyBtn.innerHTML = `
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 2px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            复制
+          `;
+          header.appendChild(copyBtn);
+        }
+      }
+
+      if (parsed.reasoning) {
+        let details = assistant.querySelector(".reasoning-details");
+        if (!details) {
+          details = document.createElement("details");
+          details.className = "reasoning-details";
+          details.setAttribute("open", "");
+          details.innerHTML = `
+            <summary>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              思考过程 (Reasoning Process)
+            </summary>
+            <div class="reasoning-content"></div>
+          `;
+          const markdownBody = assistant.querySelector(".markdown-body");
+          assistant.insertBefore(details, markdownBody);
+        }
+        const reasoningContentEl = details.querySelector(".reasoning-content");
+        if (reasoningContentEl) {
+          reasoningContentEl.textContent = parsed.reasoning;
+        }
+      }
+
+      const conversation = document.querySelector(".conversation");
+      const shouldStickToBottom = isNearBottom(conversation);
+      const output = assistant.querySelector("[data-stream-output]");
+      if (output) {
+        const markdownText = parsed.content || (parsed.reasoning ? "" : rawContent);
+        output.innerHTML = marked.parse(markdownText);
+      }
+      if (shouldStickToBottom && conversation) {
+        conversation.scrollTop = conversation.scrollHeight;
+      }
+    }
+
+    function isNearBottom(element) {
+      if (!element) {
+        return false;
+      }
+      return element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+    }
+
+    function runDataSelector(kind, runId) {
+      const escaped = window.CSS && CSS.escape
+        ? CSS.escape(runId)
+        : String(runId).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+      return `[data-${kind}-run-id="${escaped}"]`;
+    }
+
+    async function loadSnapshot(runId, skipSessionRender = false) {
       const snapshot = await requestJSON(`/api/runs/${runId}`);
       renderSnapshot(snapshot);
       if (snapshot.run && snapshot.run.session_id) {
-        await loadSession(snapshot.run.session_id);
+        if (skipSessionRender) {
+          const sessionSnapshot = await requestJSON(`/api/sessions/${snapshot.run.session_id}`);
+          selectedSessionId = sessionSnapshot.session_id;
+          streamEnabled = Boolean(sessionSnapshot.runtime_options && sessionSnapshot.runtime_options.stream);
+          updateStreamToggle();
+        } else {
+          await loadSession(snapshot.run.session_id);
+        }
       }
     }
 
@@ -1393,13 +1739,24 @@
 
         const answer = latestResponse(item.steps || []);
         if (answer) {
+          streamingResponses.delete(run.id);
           const assistant = document.createElement("div");
           assistant.className = "message assistant";
+
+          const parsed = parseStreamedJSON(answer.model_output);
+          const htmlContent = marked.parse(parsed.content || answer.model_output);
+
           assistant.innerHTML = `
-            <div class="msg-header">
-              <span class="avatar">AI</span>
-              <h3>Assistant</h3>
-              <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
+            <div class="msg-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="avatar">AI</span>
+                <h3>Assistant</h3>
+                <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
+              </div>
+              <button class="copy-msg-btn" onclick="copyMessageText(this)" title="复制回复内容">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 2px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                复制
+              </button>
             </div>
             ${answer.reasoning_summary ? `
               <details class="reasoning-details" open>
@@ -1410,21 +1767,58 @@
                 <div class="reasoning-content">${escapeHTML(answer.reasoning_summary)}</div>
               </details>
             ` : ""}
-            <div class="code-wrapper">
-              <div class="code-header">
-                <span class="code-lang">回复内容 (Response)</span>
-                <button class="copy-code-btn" onclick="copyTextToClipboard(this)">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 2px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                  复制
-                </button>
+            <div class="markdown-body">${htmlContent}</div>
+
+            <details class="raw-details" style="margin-top: 14px; opacity: 0.85;">
+              <summary style="font-size: 11px; color: var(--muted); cursor: pointer; user-select: none;">
+                查看原始响应 (Raw JSON)
+              </summary>
+              <div class="code-wrapper small" style="margin-top: 6px;">
+                <div class="code-header">
+                  <span class="code-lang">model_output</span>
+                  <button class="copy-code-btn" onclick="copyTextToClipboard(this)">
+                    复制 JSON
+                  </button>
+                </div>
+                <pre>${escapeHTML(formatMaybeJSON(answer.model_output))}</pre>
               </div>
-              <pre>${escapeHTML(formatMaybeJSON(answer.model_output))}</pre>
+            </details>
+          `;
+          timelineEl.appendChild(assistant);
+        } else if (streamingResponses.has(run.id)) {
+          const assistant = document.createElement("div");
+          assistant.className = "message assistant";
+          assistant.dataset.streamRunId = run.id;
+          const parsed = parseStreamedJSON(streamingResponses.get(run.id));
+          const htmlContent = marked.parse(parsed.content || (parsed.reasoning ? "" : streamingResponses.get(run.id)));
+          assistant.innerHTML = `
+            <div class="msg-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="avatar">AI</span>
+                <h3>Assistant</h3>
+                <span class="badge ${run.status}">${escapeHTML(run.status)}</span>
+              </div>
+              <button class="copy-msg-btn" onclick="copyMessageText(this)" title="复制回复内容">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 2px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                复制
+              </button>
             </div>
+            ${parsed.reasoning ? `
+              <details class="reasoning-details" open>
+                <summary>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  思考过程 (Reasoning Process)
+                </summary>
+                <div class="reasoning-content">${escapeHTML(parsed.reasoning)}</div>
+              </details>
+            ` : ""}
+            <div class="markdown-body" data-stream-output>${htmlContent}</div>
           `;
           timelineEl.appendChild(assistant);
         } else {
           const pending = document.createElement("div");
           pending.className = "message assistant";
+          pending.dataset.pendingRunId = run.id;
           pending.innerHTML = `
             <div class="msg-header">
               <span class="avatar">AI</span>
@@ -1472,7 +1866,7 @@
             <span class="badge decision-${call.policy_decision.toLowerCase()}">${escapeHTML(call.policy_decision)}</span>
           </div>
           <div class="item-meta">风险等级: ${escapeHTML(call.risk_level)} · 状态: ${escapeHTML(call.status)}</div>
-          
+
           <div class="code-wrapper small">
             <div class="code-header">
               <span class="code-lang">参数 (Arguments)</span>
@@ -1480,7 +1874,7 @@
             </div>
             <pre>${escapeHTML(formatMaybeJSON(call.arguments_json))}</pre>
           </div>
-          
+
           <div class="code-wrapper small">
             <div class="code-header">
               <span class="code-lang">结果 (Result)</span>
@@ -1511,7 +1905,7 @@
             <span class="badge actor-${event.actor.toLowerCase()}">${escapeHTML(event.actor)}</span>
           </div>
           <div class="item-meta">${new Date(event.created_at).toLocaleString()}</div>
-          
+
           <div class="code-wrapper small">
             <div class="code-header">
               <span class="code-lang">载荷 (Payload)</span>
@@ -1660,9 +2054,31 @@
       });
     }
 
+    function copyMessageText(btn) {
+      const assistant = btn.closest(".message.assistant");
+      const markdownBody = assistant.querySelector(".markdown-body");
+      if (!markdownBody) return;
+      const text = markdownBody.innerText;
+
+      const originalHTML = btn.innerHTML;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.innerHTML = `
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" style="margin-right: 2px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          已复制
+        `;
+        btn.style.color = 'var(--green)';
+        setTimeout(() => {
+          btn.innerHTML = originalHTML;
+          btn.style.color = '';
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy text: ', err);
+      });
+    }
+
     // Theme Switcher Logic
     const themeToggleBtn = document.getElementById("themeToggleBtn");
-    
+
     function getPreferredTheme() {
       const savedTheme = localStorage.getItem("theme");
       if (savedTheme) {
@@ -1670,13 +2086,13 @@
       }
       return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     }
-    
+
     function setTheme(theme) {
       document.documentElement.setAttribute("data-theme", theme);
       localStorage.setItem("theme", theme);
       updateThemeIcon(theme);
     }
-    
+
     function updateThemeIcon(theme) {
       if (theme === "dark") {
         themeToggleBtn.innerHTML = `
@@ -1690,12 +2106,12 @@
         themeToggleBtn.setAttribute("title", "切换为暗色模式");
       }
     }
-    
+
     themeToggleBtn.addEventListener("click", () => {
       const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
       setTheme(currentTheme === "dark" ? "light" : "dark");
     });
-    
+
     // Initialize Theme
     setTheme(getPreferredTheme());
 
