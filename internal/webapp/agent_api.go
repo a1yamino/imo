@@ -10,7 +10,7 @@ import (
 	"imo/internal/agent"
 )
 
-func (s *server) admin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) admin(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" && r.URL.Path != "/admin" {
 		http.NotFound(w, r)
 		return
@@ -19,7 +19,7 @@ func (s *server) admin(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, adminHTML)
 }
 
-func (s *server) runs(w http.ResponseWriter, r *http.Request) {
+func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		runs, err := s.runService.ListRuns(r.Context())
@@ -49,7 +49,7 @@ func (s *server) runs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) runResource(w http.ResponseWriter, r *http.Request) {
+func (s *Server) runResource(w http.ResponseWriter, r *http.Request) {
 	// Keep subresource routing here until the API surface grows enough to justify
 	// a router dependency. The paths are intentionally simple and explicit.
 	rest := strings.TrimPrefix(r.URL.Path, "/api/runs/")
@@ -87,7 +87,7 @@ func (s *server) runResource(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) sessionResource(w http.ResponseWriter, r *http.Request) {
+func (s *Server) sessionResource(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -105,7 +105,7 @@ func (s *server) sessionResource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, snapshot)
 }
 
-func (s *server) snapshotPart(w http.ResponseWriter, r *http.Request, runID string, part string) {
+func (s *Server) snapshotPart(w http.ResponseWriter, r *http.Request, runID string, part string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -125,7 +125,7 @@ func (s *server) snapshotPart(w http.ResponseWriter, r *http.Request, runID stri
 	}
 }
 
-func (s *server) runEvents(w http.ResponseWriter, r *http.Request, runID string) {
+func (s *Server) runEvents(w http.ResponseWriter, r *http.Request, runID string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

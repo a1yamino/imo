@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"imo/internal/webapp"
+	"imo/internal/app"
 )
 
 func main() {
-	if err := webapp.Run(); err != nil {
+	if err := app.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

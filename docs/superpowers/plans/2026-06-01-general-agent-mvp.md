@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- `main.go`: small application entrypoint that calls `internal/webapp.Run`.
+- `main.go`: small application entrypoint that calls `internal/app.Run`.
 - `internal/agent/types.go`: shared run, step, tool call, audit, policy, and event types.
 - `internal/agent/store.go`: SQLite schema, persistence methods, list/detail queries.
 - `internal/agent/policy.go`: autonomy/risk policy decisions.
