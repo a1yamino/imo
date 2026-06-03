@@ -94,19 +94,35 @@ const (
 // LLMMessage is the model-facing conversation unit. The runtime builds these
 // from durable runs so a session can span multiple independent executions.
 type LLMMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string        `json:"role"`
+	Content    string        `json:"content"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
+	ToolCalls  []LLMToolCall `json:"tool_calls,omitempty"`
+}
+
+type LLMToolSpec struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+}
+
+type LLMToolCall struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments"`
 }
 
 type LLMRequest struct {
 	SystemPrompt string
 	UserPrompt   string
 	Messages     []LLMMessage
+	Tools        []LLMToolSpec
 	Stream       bool
 }
 
 type LLMResponse struct {
-	Content string
+	Content   string
+	ToolCalls []LLMToolCall
 }
 
 type LLMClient interface {

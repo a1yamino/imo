@@ -269,11 +269,32 @@ func (s *RunService) runAgentLoop(ctx context.Context, run Run, messages []LLMMe
 	if err != nil {
 		return Step{}, err
 	}
+	tools := s.llmToolsForRun(run)
 	for index := 1; index <= 8; index++ {
 		llmStarted := time.Now()
-		reply, err := s.llm.Complete(ctx, LLMRequest{Messages: messages, Stream: options.Stream})
+		reply, err := s.llm.Complete(ctx, LLMRequest{Messages: messages, Tools: tools, Stream: options.Stream})
 		if err != nil {
 			return Step{}, err
+		}
+		if len(reply.ToolCalls) > 0 {
+			s.logger.Info("llm native tool calls received",
+				"run_id", run.ID,
+				"session_id", run.SessionID,
+				"step_index", index,
+				"tool_call_count", len(reply.ToolCalls),
+				"duration_ms", time.Since(llmStarted).Milliseconds(),
+			)
+			observations, nextIndex, err := s.executeNativeToolCalls(ctx, run, messages, reply.ToolCalls, index)
+			if err != nil {
+				return Step{}, err
+			}
+			messages = append(messages, LLMMessage{Role: "assistant", ToolCalls: reply.ToolCalls})
+			messages = append(messages, observations...)
+			index = nextIndex
+			continue
+		}
+		if strings.TrimSpace(reply.Content) == "" {
+			return Step{}, errors.New("llm response had no content or tool calls")
 		}
 		decision := parseAgentDecision(reply.Content)
 		s.logger.Info("llm decision received",
@@ -357,6 +378,91 @@ func (s *RunService) runAgentLoop(ctx context.Context, run Run, messages []LLMMe
 		}
 	}
 	return Step{}, errors.New("agent loop exceeded maximum steps")
+}
+
+func (s *RunService) llmToolsForRun(run Run) []LLMToolSpec {
+	specs := s.tools.Specs()
+	if len(specs) == 0 || len(run.EnabledTools) == 0 {
+		return nil
+	}
+	tools := make([]LLMToolSpec, 0, len(specs))
+	for _, spec := range specs {
+		if !toolEnabled(run.EnabledTools, spec.Name) {
+			continue
+		}
+		tools = append(tools, LLMToolSpec{
+			Name:        spec.Name,
+			Description: spec.Description,
+			Parameters:  spec.Parameters,
+		})
+	}
+	return tools
+}
+
+func (s *RunService) executeNativeToolCalls(ctx context.Context, run Run, messages []LLMMessage, calls []LLMToolCall, index int) ([]LLMMessage, int, error) {
+	observations := make([]LLMMessage, 0, len(calls))
+	for _, call := range calls {
+		decision := agentDecision{
+			Type:      "tool_call",
+			ToolName:  call.Name,
+			Arguments: call.Arguments,
+			ReasoningSummary: fmt.Sprintf(
+				"Model requested %s through the LLM provider's native tool calling API.",
+				call.Name,
+			),
+		}
+		decisionStep, err := s.store.AppendStep(ctx, Step{
+			RunID:            run.ID,
+			Index:            index,
+			Type:             StepModelDecision,
+			Status:           StepCompleted,
+			ModelInput:       messages[len(messages)-1].Content,
+			ModelOutput:      mustJSON(call),
+			ReasoningSummary: formatReasoning(decision),
+		})
+		if err != nil {
+			return nil, index, err
+		}
+		_ = s.store.SaveAuditEvent(ctx, AuditEvent{
+			OwnerID: run.OwnerID,
+			RunID:   run.ID,
+			Actor:   "agent",
+			Action:  "model_decision_created",
+			Payload: mustJSON(map[string]any{
+				"step_id":           decisionStep.ID,
+				"type":              decision.Type,
+				"tool":              decision.ToolName,
+				"tool_call_id":      call.ID,
+				"reasoning_summary": decision.ReasoningSummary,
+				"protocol":          "native_tool_calling",
+			}),
+		})
+		s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: run.ID, Data: decisionStep})
+
+		observation, err := s.executeToolDecision(ctx, run, decisionStep, decision)
+		if err != nil {
+			return nil, index, err
+		}
+		index++
+		observationStep, err := s.store.AppendStep(ctx, Step{
+			RunID:       run.ID,
+			Index:       index,
+			Type:        StepObservation,
+			Status:      StepCompleted,
+			Observation: observation,
+		})
+		if err != nil {
+			return nil, index, err
+		}
+		s.emitRuntimeEvent(RuntimeEvent{Type: RuntimeEventStepFinished, RunID: run.ID, Data: observationStep})
+		observations = append(observations, LLMMessage{
+			Role:       "tool",
+			Content:    observation,
+			ToolCallID: call.ID,
+		})
+		index++
+	}
+	return observations, index - 1, nil
 }
 
 type slashCommand struct {
@@ -575,49 +681,28 @@ func (s *RunService) systemPrompt(run Run) string {
 	var builder strings.Builder
 	builder.WriteString("You are the agent runtime decision model.\n")
 	builder.WriteString("Runtime contract:\n")
-	builder.WriteString("- Return exactly one JSON object. No Markdown fences, no prose outside JSON.\n")
-	builder.WriteString("- If the user request can be answered from conversation context alone, return a final JSON object.\n")
-	builder.WriteString("- If the request needs current, recent, external, web, sports, price, schedule, or unknown factual information, you MUST call an enabled tool instead of answering from memory.\n")
-	builder.WriteString("- If the request depends on local files, you MUST call a filesystem tool before claiming file contents.\n")
-	builder.WriteString("- Never promise future tool use. Do not say you will search, browse, inspect, or read; actually call the tool by returning tool_call JSON.\n")
+	builder.WriteString("- If the user request can be answered from conversation context alone, return a final JSON object as message content.\n")
+	builder.WriteString("- If the request needs current, recent, external, web, sports, price, schedule, or unknown factual information, use the provider-native tool calling API to call an enabled tool instead of answering from memory.\n")
+	builder.WriteString("- If the request depends on local files, use the provider-native tool calling API to call a filesystem tool before claiming file contents.\n")
+	builder.WriteString("- Never promise future tool use. Do not say you will search, browse, inspect, or read; actually call the tool.\n")
 	builder.WriteString("- Use web.search for current or unknown web information. Use web.fetch when you have a URL and need the page contents. Use filesystem.list_dir before filesystem.read_file when the file path is unknown.\n")
 	builder.WriteString("- Include reasoning_summary and a concise, user-visible reasoning_trace with 2-5 short steps. Do not include hidden chain-of-thought.\n")
-	builder.WriteString(`Tool call shape: {"type":"tool_call","tool_name":"tool.name","arguments":{},"reasoning_summary":"why this tool is required","reasoning_trace":["step 1","step 2"]}.` + "\n")
-	builder.WriteString(`Final shape: {"type":"final","content":"answer","reasoning_summary":"why no tool is needed or how observations support the answer","reasoning_trace":["step 1","step 2"]}.`)
+	builder.WriteString(`Final shape: {"type":"final","content":"answer","reasoning_summary":"why no tool is needed or how observations support the answer","reasoning_trace":["step 1","step 2"]}.` + "\n")
+	builder.WriteString(`If native tools are unavailable, fallback text tool call shape: {"type":"tool_call","tool_name":"tool.name","arguments":{},"reasoning_summary":"why this tool is required","reasoning_trace":["step 1","step 2"]}.`)
 	specs := s.tools.Specs()
 	if len(specs) == 0 || len(run.EnabledTools) == 0 {
 		return builder.String()
 	}
-	builder.WriteString("\nEnabled tools:")
+	builder.WriteString("\nEnabled native tools:")
 	for _, spec := range specs {
 		if toolEnabled(run.EnabledTools, spec.Name) {
 			builder.WriteString("\n- ")
 			builder.WriteString(spec.Name)
 			builder.WriteString(": ")
 			builder.WriteString(spec.Description)
-			example := toolCallExample(spec.Name)
-			if example != "" {
-				builder.WriteString("\n  Example: ")
-				builder.WriteString(example)
-			}
 		}
 	}
 	return builder.String()
-}
-
-func toolCallExample(name string) string {
-	switch name {
-	case "filesystem.list_dir":
-		return `{"type":"tool_call","tool_name":"filesystem.list_dir","arguments":{"path":"."},"reasoning_summary":"Need to inspect the directory.","reasoning_trace":["The request depends on local files.","Listing the directory is the lowest-risk first observation."]}`
-	case "filesystem.read_file":
-		return `{"type":"tool_call","tool_name":"filesystem.read_file","arguments":{"path":"README.md"},"reasoning_summary":"Need to read the file.","reasoning_trace":["The answer requires file content.","Reading the specific file gives direct evidence."]}`
-	case "web.search":
-		return `{"type":"tool_call","tool_name":"web.search","arguments":{"query":"current topic","max_results":5},"reasoning_summary":"Need current information.","reasoning_trace":["The request may depend on current web information.","Searching first provides candidate sources."]}`
-	case "web.fetch":
-		return `{"type":"tool_call","tool_name":"web.fetch","arguments":{"url":"https://example.com","max_chars":12000},"reasoning_summary":"Need to read the source page.","reasoning_trace":["A source URL is available.","Fetching the page gives evidence before answering."]}`
-	default:
-		return ""
-	}
 }
 
 func latestAssistantMessage(steps []Step) string {

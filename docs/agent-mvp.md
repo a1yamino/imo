@@ -67,8 +67,8 @@ Dashboard 支持：
 1. `queued -> running`
 2. 如果用户输入是 runtime 斜杠命令，runtime 直接消费命令、写入审计和 response step，不调用 LLM。
 3. 普通对话按 `session_id` 读取之前已完成 run 的 user/assistant 历史。
-4. 读取 session runtime options，例如 `stream`，并调用 OpenAI 兼容 Chat Completions 获取决策。
-5. 如果决策是 `tool_call`，先保存 model decision step，再执行工具，保存 tool call 和 observation step，并把 observation 交回模型。
+4. 读取 session runtime options，例如 `stream`，并把当前 run 启用的工具转换成 Chat Completions `tools` 参数传给 LLM。
+5. 如果 LLM 通过 provider-native `message.tool_calls` 请求工具，runtime 保存 model decision step，执行工具，保存 tool call 和 observation step，并用标准 `role=tool` / `tool_call_id` 消息把结果交回模型。
 6. 如果决策是 `final` 或普通文本，保存 response step。
 7. `running -> completed`
 
@@ -97,23 +97,13 @@ stream option 存在 SQLite 的 `session_runtime_options` 表里，作用域是 
 
 工具路径必须是相对路径，不能逃逸 `workspace_scope`。
 
-模型决策格式：
+工具调用主路径使用 OpenAI 兼容 Chat Completions 的 native tool calling：
 
-```json
-{"type":"tool_call","tool_name":"filesystem.list_dir","arguments":{"path":"."},"reasoning_summary":"Need to inspect files."}
-```
-
-搜索调用示例：
-
-```json
-{"type":"tool_call","tool_name":"web.search","arguments":{"query":"agent runtime design","max_results":5},"reasoning_summary":"Need current references."}
-```
-
-网页读取示例：
-
-```json
-{"type":"tool_call","tool_name":"web.fetch","arguments":{"url":"https://example.com","max_chars":12000},"reasoning_summary":"Need to read the source page."}
-```
+- 请求 LLM 时传 `tools` 和 `tool_choice: "auto"`。
+- 内部工具名如 `filesystem.list_dir` 会在 API 层映射成函数名 `filesystem__list_dir`，收到 provider 返回后再映射回内部工具名执行。
+- LLM 返回 `message.tool_calls` 时，runtime 执行对应工具。
+- 工具结果通过 `role: "tool"`、`tool_call_id` 和 JSON content 追加回下一次 LLM 请求。
+- 如果 provider 不支持 native tools，runtime 仍保留文本 JSON `tool_call` 解析作为兼容 fallback，但这不是首选路径。
 
 最终回复格式：
 
@@ -189,13 +179,13 @@ curl -N http://localhost:8080/api/runs/<run_id>/events
 ## 代码结构
 
 - `main.go`：根入口，只负责调用 Web 应用启动逻辑。
-- `internal/agent/types.go`：agent run、step、tool call、audit、policy、event、session runtime option 类型。
+- `internal/agent/types.go`：agent run、step、tool call、audit、policy、event、LLM tool calling、session runtime option 类型。
 - `internal/agent/policy.go`：可配置自主等级的最小 Policy Engine。
 - `internal/agent/store.go`：SQLite schema、session runtime options 和持久化查询。
 - `internal/agent/service.go`：runtime command 消费、斜杠命令处理、多轮 session 上下文组装、AI 对话 runtime、runtime event 发布。
 - `internal/agent/tools.go`：Tool Registry 和只读 filesystem 工具。
 - `internal/agent/web_tools.go`：Serper 搜索 provider 和独立 HTTP fetch 工具。
-- `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client，支持普通 JSON 响应和 streaming SSE delta 聚合。
+- `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client，支持 native `tools/tool_calls`、普通 JSON 响应和 streaming SSE delta 聚合。
 - `internal/webapp/server.go`：路由注册和静态页面嵌入。
 - `internal/webapp/agent_api.go`：admin 页面和 run API。
 - `internal/webapp/assets/agent_admin.html`：管理员 Dashboard。

@@ -36,6 +36,32 @@ func (serperSearchTool) Spec() ToolSpec {
 		Name:        "web.search",
 		Description: "Use web.search for current, recent, unknown, factual, news, sports, price, schedule, or external web information. Arguments: query and optional max_results. Do not claim you searched unless this tool is called.",
 		Risk:        RiskLow,
+		Parameters: objectSchema(map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Search query.",
+			},
+			"max_results": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of results to return, from 1 to 20.",
+			},
+			"gl": map[string]any{
+				"type":        "string",
+				"description": "Optional country code for localized search results.",
+			},
+			"hl": map[string]any{
+				"type":        "string",
+				"description": "Optional language code for localized search results.",
+			},
+			"page": map[string]any{
+				"type":        "integer",
+				"description": "Optional search result page number.",
+			},
+			"tbs": map[string]any{
+				"type":        "string",
+				"description": "Optional Google time-based search filter.",
+			},
+		}, []string{"query"}),
 	}
 }
 
@@ -150,6 +176,16 @@ func (webFetchTool) Spec() ToolSpec {
 		Name:        "web.fetch",
 		Description: "Use web.fetch when you already have a specific HTTP(S) URL and need to read the source page before answering. Arguments: url and optional max_chars. Prefer web.search first when you do not have a URL.",
 		Risk:        RiskLow,
+		Parameters: objectSchema(map[string]any{
+			"url": map[string]any{
+				"type":        "string",
+				"description": "HTTP(S) URL to fetch.",
+			},
+			"max_chars": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of extracted text characters to return.",
+			},
+		}, []string{"url"}),
 	}
 }
 

@@ -120,7 +120,7 @@ func TestRunServiceCarriesSessionHistoryAcrossTurns(t *testing.T) {
 			}
 			continue
 		}
-		if llm.lastRequest.Messages[i] != want[i] {
+		if llm.lastRequest.Messages[i].Role != want[i].Role || llm.lastRequest.Messages[i].Content != want[i].Content {
 			t.Fatalf("message[%d]=%v, want %v", i, llm.lastRequest.Messages[i], want[i])
 		}
 	}
@@ -298,6 +298,69 @@ func TestRunServiceExecutesFilesystemToolDecision(t *testing.T) {
 	}
 }
 
+func TestRunServiceExecutesNativeLLMToolCall(t *testing.T) {
+	ctx := context.Background()
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "README.md"), []byte("# Demo"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	llm := &fakeLLMClient{responseObjects: []LLMResponse{
+		{ToolCalls: []LLMToolCall{{
+			ID:        "call_1",
+			Name:      "filesystem.list_dir",
+			Arguments: map[string]any{"path": "."},
+		}}},
+		{Content: `{"type":"final","content":"I found README.md.","reasoning_summary":"The native tool result contained README.md."}`},
+	}}
+	service := NewRunService(store, PolicyEngine{}, llm)
+	RegisterFilesystemTools(service.Tools())
+	run, err := service.CreateRun(ctx, CreateRunRequest{
+		Goal:           "List files",
+		Autonomy:       AutonomyMedium,
+		EnabledTools:   []string{"filesystem.list_dir"},
+		WorkspaceScope: workspace,
+	})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if err := service.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	snapshot := waitForRunStatus(t, service, run.ID, RunCompleted)
+	if len(snapshot.ToolCalls) != 1 {
+		t.Fatalf("tool calls=%d, want 1", len(snapshot.ToolCalls))
+	}
+	if snapshot.ToolCalls[0].ToolName != "filesystem.list_dir" {
+		t.Fatalf("tool name=%q", snapshot.ToolCalls[0].ToolName)
+	}
+	if len(llm.requests) != 2 {
+		t.Fatalf("llm calls=%d, want 2", len(llm.requests))
+	}
+	if len(llm.requests[0].Tools) != 1 || llm.requests[0].Tools[0].Name != "filesystem.list_dir" {
+		t.Fatalf("first llm request tools=%+v", llm.requests[0].Tools)
+	}
+	secondMessages := llm.requests[1].Messages
+	if len(secondMessages) < 2 {
+		t.Fatalf("second messages=%+v", secondMessages)
+	}
+	assistantMessage := secondMessages[len(secondMessages)-2]
+	toolMessage := secondMessages[len(secondMessages)-1]
+	if len(assistantMessage.ToolCalls) != 1 || assistantMessage.ToolCalls[0].ID != "call_1" {
+		t.Fatalf("assistant tool call message=%+v", assistantMessage)
+	}
+	if toolMessage.Role != "tool" || toolMessage.ToolCallID != "call_1" || !strings.Contains(toolMessage.Content, "README.md") {
+		t.Fatalf("tool result message=%+v", toolMessage)
+	}
+}
+
 func TestRunServiceStoresVisibleReasoningTrace(t *testing.T) {
 	ctx := context.Background()
 	store, err := NewSQLiteAgentStore(ctx, ":memory:")
@@ -337,16 +400,13 @@ func TestSystemPromptIncludesEnabledWebSearchExample(t *testing.T) {
 		EnabledTools: []string{"web.search", "web.fetch"},
 	})
 
-	if !strings.Contains(prompt, `"tool_name":"web.search"`) {
-		t.Fatalf("prompt does not include web.search tool-call example:\n%s", prompt)
-	}
 	for _, want := range []string{
 		"Runtime contract",
-		"MUST call an enabled tool",
+		"provider-native tool calling API",
 		"Never promise future tool use",
-		"Return exactly one JSON object",
 		"Use web.search for current",
 		"Use web.fetch when you have a URL",
+		"fallback text tool call shape",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt does not contain %q:\n%s", want, prompt)
@@ -428,15 +488,21 @@ func waitForRunStatus(t *testing.T, service *RunService, runID string, status Ru
 }
 
 type fakeLLMClient struct {
-	response    string
-	responses   []string
-	lastRequest LLMRequest
-	requests    []LLMRequest
+	response        string
+	responses       []string
+	responseObjects []LLMResponse
+	lastRequest     LLMRequest
+	requests        []LLMRequest
 }
 
 func (f *fakeLLMClient) Complete(ctx context.Context, req LLMRequest) (LLMResponse, error) {
 	f.lastRequest = req
 	f.requests = append(f.requests, req)
+	if len(f.responseObjects) > 0 {
+		response := f.responseObjects[0]
+		f.responseObjects = f.responseObjects[1:]
+		return response, nil
+	}
 	if len(f.responses) > 0 {
 		response := f.responses[0]
 		f.responses = f.responses[1:]

@@ -15,6 +15,7 @@ type ToolSpec struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Risk        RiskLevel `json:"risk"`
+	Parameters  map[string]any
 }
 
 type ToolRequest struct {
@@ -78,6 +79,12 @@ func (filesystemListDirTool) Spec() ToolSpec {
 		Name:        "filesystem.list_dir",
 		Description: "Use when you need to inspect available local files or directories before answering. Arguments: path, a relative directory path under workspace_scope. Do not use for web/current information.",
 		Risk:        RiskLow,
+		Parameters: objectSchema(map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Relative directory path under workspace_scope. Use . for the workspace root.",
+			},
+		}, []string{"path"}),
 	}
 }
 
@@ -126,6 +133,21 @@ func (filesystemReadFileTool) Spec() ToolSpec {
 		Name:        "filesystem.read_file",
 		Description: "Use when the answer depends on the contents of a known local file. Arguments: path, a relative file path under workspace_scope. Do not guess file contents; call this tool first.",
 		Risk:        RiskLow,
+		Parameters: objectSchema(map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Relative file path under workspace_scope.",
+			},
+		}, []string{"path"}),
+	}
+}
+
+func objectSchema(properties map[string]any, required []string) map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             required,
+		"additionalProperties": false,
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -46,9 +47,11 @@ func (c *OpenAICompatibleLLMClient) Complete(ctx context.Context, req LLMRequest
 	}
 
 	body, err := json.Marshal(chatCompletionRequest{
-		Model:    c.model,
-		Messages: chatCompletionMessages(req),
-		Stream:   req.Stream,
+		Model:      c.model,
+		Messages:   chatCompletionMessages(req),
+		Tools:      chatCompletionTools(req.Tools),
+		ToolChoice: chatCompletionToolChoice(req.Tools),
+		Stream:     req.Stream,
 	})
 	if err != nil {
 		return LLMResponse{}, err
@@ -96,7 +99,12 @@ func (c *OpenAICompatibleLLMClient) Complete(ctx context.Context, req LLMRequest
 		return LLMResponse{}, errors.New("chat completion response has no choices")
 	}
 
-	return LLMResponse{Content: strings.TrimSpace(parsed.Choices[0].Message.Content)}, nil
+	message := parsed.Choices[0].Message
+	toolCalls, err := llmToolCalls(message.ToolCalls)
+	if err != nil {
+		return LLMResponse{}, err
+	}
+	return LLMResponse{Content: strings.TrimSpace(message.Content), ToolCalls: toolCalls}, nil
 }
 
 func parseChatCompletionStream(body io.Reader) (LLMResponse, error) {
@@ -104,6 +112,7 @@ func parseChatCompletionStream(body io.Reader) (LLMResponse, error) {
 	// Some providers emit larger JSON chunks than the default 64 KiB scanner cap.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var builder strings.Builder
+	streamToolCalls := map[int]*chatCompletionStreamToolCall{}
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, ":") {
@@ -114,7 +123,7 @@ func parseChatCompletionStream(body io.Reader) (LLMResponse, error) {
 		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
-			return LLMResponse{Content: strings.TrimSpace(builder.String())}, nil
+			return finishChatCompletionStream(builder.String(), streamToolCalls)
 		}
 		var event chatCompletionStreamEvent
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
@@ -122,26 +131,58 @@ func parseChatCompletionStream(body io.Reader) (LLMResponse, error) {
 		}
 		for _, choice := range event.Choices {
 			builder.WriteString(choice.Delta.Content)
+			for _, call := range choice.Delta.ToolCalls {
+				current := streamToolCalls[call.Index]
+				if current == nil {
+					current = &chatCompletionStreamToolCall{Index: call.Index}
+					streamToolCalls[call.Index] = current
+				}
+				if call.ID != "" {
+					current.ID = call.ID
+				}
+				if call.Type != "" {
+					current.Type = call.Type
+				}
+				if call.Function.Name != "" {
+					current.Function.Name += call.Function.Name
+				}
+				if call.Function.Arguments != "" {
+					current.Function.Arguments += call.Function.Arguments
+				}
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return LLMResponse{}, err
 	}
-	content := strings.TrimSpace(builder.String())
-	if content == "" {
+	return finishChatCompletionStream(builder.String(), streamToolCalls)
+}
+
+func finishChatCompletionStream(content string, streamToolCalls map[int]*chatCompletionStreamToolCall) (LLMResponse, error) {
+	content = strings.TrimSpace(content)
+	toolCalls, err := llmStreamToolCalls(streamToolCalls)
+	if err != nil {
+		return LLMResponse{}, err
+	}
+	if content == "" && len(toolCalls) == 0 {
 		return LLMResponse{}, errors.New("chat completion stream produced no content")
 	}
-	return LLMResponse{Content: content}, nil
+	return LLMResponse{Content: content, ToolCalls: toolCalls}, nil
 }
 
 func chatCompletionMessages(req LLMRequest) []chatCompletionMessage {
 	if len(req.Messages) > 0 {
 		messages := make([]chatCompletionMessage, 0, len(req.Messages))
 		for _, message := range req.Messages {
-			if strings.TrimSpace(message.Content) == "" {
+			if strings.TrimSpace(message.Content) == "" && len(message.ToolCalls) == 0 {
 				continue
 			}
-			messages = append(messages, chatCompletionMessage{Role: message.Role, Content: message.Content})
+			messages = append(messages, chatCompletionMessage{
+				Role:       message.Role,
+				Content:    message.Content,
+				ToolCallID: message.ToolCallID,
+				ToolCalls:  chatCompletionToolCalls(message.ToolCalls),
+			})
 		}
 		return messages
 	}
@@ -155,15 +196,153 @@ func chatCompletionMessages(req LLMRequest) []chatCompletionMessage {
 	return messages
 }
 
+func chatCompletionTools(tools []LLMToolSpec) []chatCompletionTool {
+	if len(tools) == 0 {
+		return nil
+	}
+	result := make([]chatCompletionTool, 0, len(tools))
+	for _, tool := range tools {
+		if strings.TrimSpace(tool.Name) == "" {
+			continue
+		}
+		parameters := tool.Parameters
+		if parameters == nil {
+			parameters = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		result = append(result, chatCompletionTool{
+			Type: "function",
+			Function: chatCompletionFunctionTool{
+				Name:        toolAPIFunctionName(tool.Name),
+				Description: tool.Description,
+				Parameters:  parameters,
+			},
+		})
+	}
+	return result
+}
+
+func chatCompletionToolChoice(tools []LLMToolSpec) any {
+	if len(tools) == 0 {
+		return nil
+	}
+	return "auto"
+}
+
+func chatCompletionToolCalls(calls []LLMToolCall) []chatCompletionToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	result := make([]chatCompletionToolCall, 0, len(calls))
+	for _, call := range calls {
+		arguments, err := json.Marshal(call.Arguments)
+		if err != nil {
+			arguments = []byte("{}")
+		}
+		result = append(result, chatCompletionToolCall{
+			ID:   call.ID,
+			Type: "function",
+			Function: chatCompletionToolCallFunction{
+				Name:      toolAPIFunctionName(call.Name),
+				Arguments: string(arguments),
+			},
+		})
+	}
+	return result
+}
+
+func llmToolCalls(calls []chatCompletionToolCall) ([]LLMToolCall, error) {
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	result := make([]LLMToolCall, 0, len(calls))
+	for _, call := range calls {
+		if call.Type != "" && call.Type != "function" {
+			continue
+		}
+		var arguments map[string]any
+		rawArgs := strings.TrimSpace(call.Function.Arguments)
+		if rawArgs == "" {
+			arguments = map[string]any{}
+		} else if err := json.Unmarshal([]byte(rawArgs), &arguments); err != nil {
+			return nil, fmt.Errorf("parse tool call arguments for %s: %w", call.Function.Name, err)
+		}
+		result = append(result, LLMToolCall{
+			ID:        call.ID,
+			Name:      toolInternalName(call.Function.Name),
+			Arguments: arguments,
+		})
+	}
+	return result, nil
+}
+
+func llmStreamToolCalls(calls map[int]*chatCompletionStreamToolCall) ([]LLMToolCall, error) {
+	if len(calls) == 0 {
+		return nil, nil
+	}
+	indexes := make([]int, 0, len(calls))
+	for index := range calls {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	result := make([]LLMToolCall, 0, len(indexes))
+	for _, index := range indexes {
+		call := calls[index]
+		parsed, err := llmToolCalls([]chatCompletionToolCall{{
+			ID:       call.ID,
+			Type:     call.Type,
+			Function: call.Function,
+		}})
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, parsed...)
+	}
+	return result, nil
+}
+
+func toolAPIFunctionName(name string) string {
+	return strings.ReplaceAll(name, ".", "__")
+}
+
+func toolInternalName(name string) string {
+	return strings.ReplaceAll(name, "__", ".")
+}
+
 type chatCompletionRequest struct {
-	Model    string                  `json:"model"`
-	Messages []chatCompletionMessage `json:"messages"`
-	Stream   bool                    `json:"stream,omitempty"`
+	Model      string                  `json:"model"`
+	Messages   []chatCompletionMessage `json:"messages"`
+	Tools      []chatCompletionTool    `json:"tools,omitempty"`
+	ToolChoice any                     `json:"tool_choice,omitempty"`
+	Stream     bool                    `json:"stream,omitempty"`
 }
 
 type chatCompletionMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string                   `json:"role"`
+	Content    string                   `json:"content,omitempty"`
+	ToolCallID string                   `json:"tool_call_id,omitempty"`
+	ToolCalls  []chatCompletionToolCall `json:"tool_calls,omitempty"`
+}
+
+type chatCompletionTool struct {
+	Type     string                     `json:"type"`
+	Function chatCompletionFunctionTool `json:"function"`
+}
+
+type chatCompletionFunctionTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
+}
+
+type chatCompletionToolCall struct {
+	ID       string                         `json:"id"`
+	Type     string                         `json:"type"`
+	Function chatCompletionToolCallFunction `json:"function"`
+}
+
+type chatCompletionToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type chatCompletionResponse struct {
@@ -178,6 +357,18 @@ type chatCompletionResponse struct {
 
 type chatCompletionStreamEvent struct {
 	Choices []struct {
-		Delta chatCompletionMessage `json:"delta"`
+		Delta chatCompletionStreamDelta `json:"delta"`
 	} `json:"choices"`
+}
+
+type chatCompletionStreamDelta struct {
+	Content   string                         `json:"content"`
+	ToolCalls []chatCompletionStreamToolCall `json:"tool_calls"`
+}
+
+type chatCompletionStreamToolCall struct {
+	Index    int                            `json:"index"`
+	ID       string                         `json:"id"`
+	Type     string                         `json:"type"`
+	Function chatCompletionToolCallFunction `json:"function"`
 }
