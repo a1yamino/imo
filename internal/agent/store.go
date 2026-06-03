@@ -118,7 +118,20 @@ func (s *SQLiteAgentStore) init(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS session_runtime_options (
 			session_id TEXT PRIMARY KEY,
 			stream_enabled INTEGER NOT NULL,
+			usage_enabled INTEGER NOT NULL DEFAULT 0,
 			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS llm_usage (
+			id TEXT PRIMARY KEY,
+			run_id TEXT NOT NULL,
+			step_index INTEGER NOT NULL,
+			prompt_tokens INTEGER NOT NULL,
+			completion_tokens INTEGER NOT NULL,
+			total_tokens INTEGER NOT NULL,
+			cached_tokens INTEGER NOT NULL,
+			reasoning_tokens INTEGER NOT NULL,
+			created_at TEXT NOT NULL,
+			FOREIGN KEY(run_id) REFERENCES runs(id)
 		)`,
 	}
 	for _, statement := range statements {
@@ -126,7 +139,37 @@ func (s *SQLiteAgentStore) init(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.ensureColumn(ctx, "session_runtime_options", "usage_enabled", `INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (s *SQLiteAgentStore) ensureColumn(ctx context.Context, table, column, definition string) error {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == column {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, definition))
+	return err
 }
 
 func (s *SQLiteAgentStore) CreateRun(ctx context.Context, req CreateRunRequest) (Run, error) {
@@ -181,11 +224,12 @@ func (s *SQLiteAgentStore) GetSessionRuntimeOptions(ctx context.Context, session
 		return SessionRuntimeOptions{}, errors.New("session_id is required")
 	}
 	var streamEnabled int
+	var usageEnabled int
 	var updatedAt string
-	err := s.db.QueryRowContext(ctx, `SELECT stream_enabled, updated_at
-		FROM session_runtime_options WHERE session_id = ?`, sessionID).Scan(&streamEnabled, &updatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT stream_enabled, usage_enabled, updated_at
+		FROM session_runtime_options WHERE session_id = ?`, sessionID).Scan(&streamEnabled, &usageEnabled, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return SessionRuntimeOptions{SessionID: sessionID, Stream: false}, nil
+		return SessionRuntimeOptions{SessionID: sessionID, Stream: false, Usage: false}, nil
 	}
 	if err != nil {
 		return SessionRuntimeOptions{}, err
@@ -193,6 +237,7 @@ func (s *SQLiteAgentStore) GetSessionRuntimeOptions(ctx context.Context, session
 	return SessionRuntimeOptions{
 		SessionID: sessionID,
 		Stream:    streamEnabled == 1,
+		Usage:     usageEnabled == 1,
 		UpdatedAt: parseTime(updatedAt),
 	}, nil
 }
@@ -208,17 +253,76 @@ func (s *SQLiteAgentStore) SetSessionRuntimeOptions(ctx context.Context, options
 	if options.Stream {
 		streamEnabled = 1
 	}
+	usageEnabled := 0
+	if options.Usage {
+		usageEnabled = 1
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO session_runtime_options (
-		session_id, stream_enabled, updated_at
-	) VALUES (?, ?, ?)
+		session_id, stream_enabled, usage_enabled, updated_at
+	) VALUES (?, ?, ?, ?)
 	ON CONFLICT(session_id) DO UPDATE SET
 		stream_enabled = excluded.stream_enabled,
+		usage_enabled = excluded.usage_enabled,
 		updated_at = excluded.updated_at`,
-		options.SessionID, streamEnabled, formatTime(now))
+		options.SessionID, streamEnabled, usageEnabled, formatTime(now))
 	if err != nil {
 		return SessionRuntimeOptions{}, err
 	}
 	return options, nil
+}
+
+func (s *SQLiteAgentStore) SaveLLMUsage(ctx context.Context, record LLMUsageRecord) (LLMUsageRecord, error) {
+	record.RunID = strings.TrimSpace(record.RunID)
+	if record.RunID == "" {
+		return LLMUsageRecord{}, errors.New("run_id is required")
+	}
+	now := time.Now().UTC()
+	if record.ID == "" {
+		record.ID = uuid.NewString()
+	}
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = now
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO llm_usage (
+		id, run_id, step_index, prompt_tokens, completion_tokens, total_tokens,
+		cached_tokens, reasoning_tokens, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		record.ID, record.RunID, record.StepIndex, record.Usage.PromptTokens,
+		record.Usage.CompletionTokens, record.Usage.TotalTokens, record.Usage.CachedTokens,
+		record.Usage.ReasoningTokens, formatTime(record.CreatedAt))
+	if err != nil {
+		return LLMUsageRecord{}, err
+	}
+	return record, nil
+}
+
+func (s *SQLiteAgentStore) SessionUsage(ctx context.Context, sessionID string) (LLMUsageSummary, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return LLMUsageSummary{}, errors.New("session_id is required")
+	}
+	summary := LLMUsageSummary{SessionID: sessionID}
+	err := s.db.QueryRowContext(ctx, `SELECT
+			COUNT(u.id),
+			COALESCE(SUM(u.prompt_tokens), 0),
+			COALESCE(SUM(u.completion_tokens), 0),
+			COALESCE(SUM(u.total_tokens), 0),
+			COALESCE(SUM(u.cached_tokens), 0),
+			COALESCE(SUM(u.reasoning_tokens), 0)
+		FROM llm_usage u
+		INNER JOIN runs r ON r.id = u.run_id
+		WHERE r.session_id = ?`, sessionID).Scan(
+		&summary.LLMCalls,
+		&summary.PromptTokens,
+		&summary.CompletionTokens,
+		&summary.TotalTokens,
+		&summary.CachedTokens,
+		&summary.ReasoningTokens,
+	)
+	if err != nil {
+		return LLMUsageSummary{}, err
+	}
+	return summary, nil
 }
 
 func (s *SQLiteAgentStore) GetRun(ctx context.Context, id string) (Run, error) {

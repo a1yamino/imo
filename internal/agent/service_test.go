@@ -227,6 +227,63 @@ func TestRunServiceCanDisableStreamWithSlashCommand(t *testing.T) {
 	}
 }
 
+func TestRunServiceAppliesUsageSlashCommandAndRecordsTokens(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	usage := LLMUsage{PromptTokens: 12, CompletionTokens: 8, TotalTokens: 20, CachedTokens: 4, ReasoningTokens: 3}
+	llm := &fakeLLMClient{responseObjects: []LLMResponse{{Content: `{"type":"final","content":"token answer"}`, Usage: &usage}}}
+	service := NewRunService(store, PolicyEngine{}, llm)
+
+	commandRun, err := service.CreateRun(ctx, CreateRunRequest{Goal: "/usage on"})
+	if err != nil {
+		t.Fatalf("CreateRun command: %v", err)
+	}
+	if err := service.StartRun(ctx, commandRun.ID); err != nil {
+		t.Fatalf("StartRun command: %v", err)
+	}
+	commandSnapshot := waitForRunStatus(t, service, commandRun.ID, RunCompleted)
+	if len(llm.requests) != 0 {
+		t.Fatalf("slash command called llm %d times, want 0", len(llm.requests))
+	}
+	if got := latestAssistantMessage(commandSnapshot.Steps); !strings.Contains(strings.ToLower(got), "usage on") {
+		t.Fatalf("slash command response=%q, want usage on confirmation", got)
+	}
+
+	chatRun, err := service.CreateRun(ctx, CreateRunRequest{SessionID: commandRun.SessionID, Goal: "正常对话"})
+	if err != nil {
+		t.Fatalf("CreateRun chat: %v", err)
+	}
+	if err := service.StartRun(ctx, chatRun.ID); err != nil {
+		t.Fatalf("StartRun chat: %v", err)
+	}
+	waitForRunStatus(t, service, chatRun.ID, RunCompleted)
+	if len(llm.requests) != 1 {
+		t.Fatalf("llm calls=%d, want 1", len(llm.requests))
+	}
+	if !llm.lastRequest.Usage {
+		t.Fatalf("llm request usage=false, want true")
+	}
+
+	session, err := service.SessionSnapshot(ctx, commandRun.SessionID)
+	if err != nil {
+		t.Fatalf("SessionSnapshot: %v", err)
+	}
+	if !session.RuntimeOptions.Usage {
+		t.Fatalf("session usage option=false, want true")
+	}
+	if session.UsageSummary.LLMCalls != 1 || session.UsageSummary.TotalTokens != 20 {
+		t.Fatalf("usage summary=%+v, want one call and 20 total tokens", session.UsageSummary)
+	}
+	if session.UsageSummary.CachedTokens != 4 || session.UsageSummary.ReasoningTokens != 3 {
+		t.Fatalf("usage details=%+v, want cached=4 reasoning=3", session.UsageSummary)
+	}
+}
+
 func TestRunServicePublishesLLMResponseDeltasWhenStreaming(t *testing.T) {
 	ctx := context.Background()
 	store, err := NewSQLiteAgentStore(ctx, ":memory:")

@@ -122,3 +122,68 @@ func TestSQLiteAgentStoreListsRunsBySession(t *testing.T) {
 		t.Fatal("session filter included an unrelated run")
 	}
 }
+
+func TestSQLiteAgentStorePersistsSessionUsageOptionsAndSummaries(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSQLiteAgentStore(ctx, ":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteAgentStore: %v", err)
+	}
+	defer store.Close()
+
+	run, err := store.CreateRun(ctx, CreateRunRequest{Goal: "first"})
+	if err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	options, err := store.SetSessionRuntimeOptions(ctx, SessionRuntimeOptions{
+		SessionID: run.SessionID,
+		Stream:    true,
+		Usage:     true,
+	})
+	if err != nil {
+		t.Fatalf("SetSessionRuntimeOptions: %v", err)
+	}
+	if !options.Stream || !options.Usage {
+		t.Fatalf("options=%+v, want stream and usage enabled", options)
+	}
+
+	if _, err := store.SaveLLMUsage(ctx, LLMUsageRecord{
+		RunID:     run.ID,
+		StepIndex: 1,
+		Usage: LLMUsage{
+			PromptTokens:     10,
+			CompletionTokens: 4,
+			TotalTokens:      14,
+			CachedTokens:     3,
+			ReasoningTokens:  2,
+		},
+	}); err != nil {
+		t.Fatalf("SaveLLMUsage first: %v", err)
+	}
+	second, err := store.CreateRun(ctx, CreateRunRequest{SessionID: run.SessionID, Goal: "second"})
+	if err != nil {
+		t.Fatalf("CreateRun second: %v", err)
+	}
+	if _, err := store.SaveLLMUsage(ctx, LLMUsageRecord{
+		RunID:     second.ID,
+		StepIndex: 1,
+		Usage: LLMUsage{
+			PromptTokens:     7,
+			CompletionTokens: 5,
+			TotalTokens:      12,
+		},
+	}); err != nil {
+		t.Fatalf("SaveLLMUsage second: %v", err)
+	}
+
+	summary, err := store.SessionUsage(ctx, run.SessionID)
+	if err != nil {
+		t.Fatalf("SessionUsage: %v", err)
+	}
+	if summary.LLMCalls != 2 || summary.PromptTokens != 17 || summary.CompletionTokens != 9 || summary.TotalTokens != 26 {
+		t.Fatalf("summary=%+v, want calls=2 prompt=17 completion=9 total=26", summary)
+	}
+	if summary.CachedTokens != 3 || summary.ReasoningTokens != 2 {
+		t.Fatalf("summary details=%+v, want cached=3 reasoning=2", summary)
+	}
+}

@@ -652,12 +652,14 @@
       gap: 12px;
     }
 
-    .stream-toggle {
+    .stream-toggle,
+    .usage-toggle {
       min-width: 116px;
       justify-content: center;
     }
 
-    .stream-toggle.active {
+    .stream-toggle.active,
+    .usage-toggle.active {
       background: var(--green-light);
       color: var(--green);
       border-color: var(--green-border);
@@ -701,6 +703,28 @@
       padding: 0 24px;
       border-radius: var(--radius);
       font-size: 14px;
+    }
+
+    .usage-footer {
+      max-width: 900px;
+      width: 100%;
+      margin: 10px auto 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      align-items: center;
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+    }
+
+    .usage-footer[hidden] {
+      display: none;
+    }
+
+    .usage-footer strong {
+      color: var(--text-secondary);
+      font-weight: 700;
     }
 
     .message {
@@ -1269,6 +1293,10 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h5"/><path d="M4 12h9"/><path d="M4 7h16"/><path d="M14 17h6"/></svg>
               <span>Stream off</span>
             </button>
+            <button id="usageToggleBtn" class="secondary usage-toggle" type="button" aria-pressed="false" title="通过 /usage on 或 /usage off 切换">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M8 19v-6"/><path d="M12 19V9"/><path d="M16 19v-4"/><path d="M20 19V7"/></svg>
+              <span>Usage off</span>
+            </button>
             <button id="newChatBtn" class="secondary" type="button">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               新对话
@@ -1293,6 +1321,7 @@
             发送
           </button>
         </div>
+        <div id="usageFooter" class="usage-footer" hidden></div>
       </form>
     </main>
 
@@ -1327,11 +1356,15 @@
     const refreshBtnEl = document.getElementById("refreshBtn");
     const newChatBtnEl = document.getElementById("newChatBtn");
     const streamToggleBtnEl = document.getElementById("streamToggleBtn");
+    const usageToggleBtnEl = document.getElementById("usageToggleBtn");
+    const usageFooterEl = document.getElementById("usageFooter");
 
     let selectedRunId = "";
     let selectedSessionId = "";
     let autoSelectLatest = true;
     let streamEnabled = false;
+    let usageEnabled = false;
+    let usageSummary = null;
     let currentRuns = [];
     const streamingResponses = new Map();
     const pendingStreamFlushes = new Set();
@@ -1688,7 +1721,11 @@
           const sessionSnapshot = await requestJSON(`/api/sessions/${snapshot.run.session_id}`);
           selectedSessionId = sessionSnapshot.session_id;
           streamEnabled = Boolean(sessionSnapshot.runtime_options && sessionSnapshot.runtime_options.stream);
+          usageEnabled = Boolean(sessionSnapshot.runtime_options && sessionSnapshot.runtime_options.usage);
+          usageSummary = sessionSnapshot.usage_summary || null;
           updateStreamToggle();
+          updateUsageToggle();
+          updateUsageFooter();
         } else {
           await loadSession(snapshot.run.session_id);
         }
@@ -1699,7 +1736,11 @@
       const snapshot = await requestJSON(`/api/sessions/${sessionId}`);
       selectedSessionId = snapshot.session_id;
       streamEnabled = Boolean(snapshot.runtime_options && snapshot.runtime_options.stream);
+      usageEnabled = Boolean(snapshot.runtime_options && snapshot.runtime_options.usage);
+      usageSummary = snapshot.usage_summary || null;
       updateStreamToggle();
+      updateUsageToggle();
+      updateUsageFooter();
       renderSession(snapshot);
     }
 
@@ -1996,6 +2037,22 @@
       await loadRuns();
     });
 
+    usageToggleBtnEl.addEventListener("click", async () => {
+      if (usageToggleBtnEl.disabled) {
+        return;
+      }
+      const nextUsageEnabled = !usageEnabled;
+      usageToggleBtnEl.disabled = true;
+      const run = await sendSlashCommand(nextUsageEnabled ? "/usage on" : "/usage off").finally(() => {
+        usageToggleBtnEl.disabled = false;
+      });
+      usageEnabled = nextUsageEnabled;
+      updateUsageToggle();
+      updateUsageFooter();
+      await selectRun(run.id);
+      await loadRuns();
+    });
+
     function updateStreamToggle() {
       streamToggleBtnEl.classList.toggle("active", streamEnabled);
       streamToggleBtnEl.setAttribute("aria-pressed", String(streamEnabled));
@@ -2003,12 +2060,50 @@
       if (label) label.textContent = streamEnabled ? "Stream on" : "Stream off";
     }
 
+    function updateUsageToggle() {
+      usageToggleBtnEl.classList.toggle("active", usageEnabled);
+      usageToggleBtnEl.setAttribute("aria-pressed", String(usageEnabled));
+      const label = usageToggleBtnEl.querySelector("span");
+      if (label) label.textContent = usageEnabled ? "Usage on" : "Usage off";
+    }
+
+    function updateUsageFooter() {
+      if (!usageEnabled || !usageSummary) {
+        usageFooterEl.hidden = true;
+        usageFooterEl.innerHTML = "";
+        return;
+      }
+      const parts = [
+        `<strong>Tokens</strong>`,
+        `prompt ${formatNumber(usageSummary.prompt_tokens || 0)}`,
+        `completion ${formatNumber(usageSummary.completion_tokens || 0)}`,
+        `total ${formatNumber(usageSummary.total_tokens || 0)}`,
+        `calls ${formatNumber(usageSummary.llm_calls || 0)}`
+      ];
+      if (usageSummary.cached_tokens) {
+        parts.push(`cached ${formatNumber(usageSummary.cached_tokens)}`);
+      }
+      if (usageSummary.reasoning_tokens) {
+        parts.push(`reasoning ${formatNumber(usageSummary.reasoning_tokens)}`);
+      }
+      usageFooterEl.innerHTML = parts.map((part) => `<span>${part}</span>`).join("");
+      usageFooterEl.hidden = false;
+    }
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
     function resetConversation() {
       selectedRunId = "";
       selectedSessionId = "";
       autoSelectLatest = false;
       streamEnabled = false;
+      usageEnabled = false;
+      usageSummary = null;
       updateStreamToggle();
+      updateUsageToggle();
+      updateUsageFooter();
       if (eventSource) {
         eventSource.close();
         eventSource = null;

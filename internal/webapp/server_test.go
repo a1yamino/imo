@@ -37,8 +37,17 @@ func TestDashboardServesRootAndAdmin(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), `id="streamToggleBtn"`) {
 				t.Fatal("response does not contain stream toggle")
 			}
+			if !strings.Contains(rec.Body.String(), `id="usageToggleBtn"`) {
+				t.Fatal("response does not contain usage toggle")
+			}
+			if !strings.Contains(rec.Body.String(), `id="usageFooter"`) {
+				t.Fatal("response does not contain usage footer")
+			}
 			if !strings.Contains(rec.Body.String(), `sendSlashCommand(nextStreamEnabled ? "/stream on" : "/stream off")`) {
 				t.Fatal("stream toggle should send slash commands")
+			}
+			if !strings.Contains(rec.Body.String(), `sendSlashCommand(nextUsageEnabled ? "/usage on" : "/usage off")`) {
+				t.Fatal("usage toggle should send slash commands")
 			}
 			if !strings.Contains(rec.Body.String(), "appendStreamingDelta") {
 				t.Fatal("response does not support streaming response deltas")

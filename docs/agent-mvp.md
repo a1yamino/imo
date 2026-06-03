@@ -60,6 +60,7 @@ Dashboard 支持：
 - 查看工具调用参数、Policy 决策、风险等级和结果。
 - 查看审计事件。
 - 通过 Stream 开关发送 `/stream on` 或 `/stream off`，切换当前 session 的 LLM streaming 请求模式。
+- 通过 Usage 开关发送 `/usage on` 或 `/usage off`，切换当前 session 的 token usage 记录和 footer 展示。
 - 通过 SSE 观察 runtime event；stream 模式下文本 delta 会实时追加到当前 Assistant 消息，完成后再用 snapshot 校准。
 
 当前 AI run 会执行：
@@ -67,26 +68,35 @@ Dashboard 支持：
 1. `queued -> running`
 2. 如果用户输入是 runtime 斜杠命令，runtime 直接消费命令、写入审计和 response step，不调用 LLM。
 3. 普通对话按 `session_id` 读取之前已完成 run 的 user/assistant 历史。
-4. 读取 session runtime options，例如 `stream`，并把当前 run 启用的工具转换成 Chat Completions `tools` 参数传给 LLM。
+4. 读取 session runtime options，例如 `stream` 和 `usage`，并把当前 run 启用的工具转换成 Chat Completions `tools` 参数传给 LLM。
 5. 如果 LLM 通过 provider-native `message.tool_calls` 请求工具，runtime 保存 model decision step，执行工具，保存 tool call 和 observation step，并用标准 `role=tool` / `tool_call_id` 消息把结果交回模型。
-6. 如果决策是 `final` 或普通文本，保存 response step。
-7. `running -> completed`
+6. 如果开启了 `usage` 且 LLM provider 返回 token usage，runtime 为本次 LLM 调用写入一条 `llm_usage` 记录。
+7. 如果决策是 `final` 或普通文本，保存 response step。
+8. `running -> completed`
 
 ## Runtime 斜杠命令
 
-斜杠命令是 agent runtime 的控制输入，不是前端私有状态。Dashboard 的 Stream 按钮只是发送同样的命令：
+斜杠命令是 agent runtime 的控制输入，不是前端私有状态。Dashboard 的 Stream 和 Usage 按钮只是发送同样的命令：
 
 ```text
 /stream on
 /stream off
 /stream
+/usage on
+/usage off
+/usage
 ```
 
 - `/stream on`：把当前 session 的 `stream` runtime option 设为 `true`。
 - `/stream off`：把当前 session 的 `stream` runtime option 设为 `false`。
 - `/stream`：读取当前 session 的 stream 状态。
+- `/usage on`：把当前 session 的 `usage` runtime option 设为 `true`，后续 run 完成后 footer 展示累计 token。
+- `/usage off`：把当前 session 的 `usage` runtime option 设为 `false`，后续 run 不记录 usage，footer 隐藏。
+- `/usage`：读取当前 session 的 usage 状态和已记录 token 汇总。
 
 stream option 存在 SQLite 的 `session_runtime_options` 表里，作用域是 session。普通对话 run 在调用 LLM 前读取该 option；当 `stream=true` 时，OpenAI 兼容 client 会发送 `"stream": true`。文本 delta 会通过 `llm_response_delta` runtime event 推给 Dashboard，前端即时追加显示；runtime 仍会聚合完整回复并在完成时写入 response step，用于审计和最终 snapshot 校准。工具调用 delta 当前仍在后端聚合成完整 `tool_calls` 后执行。
+
+usage option 同样存在 `session_runtime_options` 表里，作用域是 session。开启后，每次 LLM 调用如果 provider 返回 `usage`，runtime 会把 prompt、completion、total、cached、reasoning token 写入 `llm_usage` 表。Dashboard 从 session snapshot 的 `usage_summary` 读取累计 token，并在每次 run 完成后刷新 footer。当前只记录 token，不计算费用。
 
 当前已注册的只读工具：
 
@@ -160,7 +170,7 @@ curl -s http://localhost:8080/api/runs/<run_id>
 curl -s http://localhost:8080/api/sessions/<session_id>
 ```
 
-返回的 `runtime_options.stream` 表示该 session 当前是否启用 LLM streaming 请求模式。
+返回的 `runtime_options.stream` 表示该 session 当前是否启用 LLM streaming 请求模式。`runtime_options.usage` 表示是否记录和展示 token usage；`usage_summary` 返回当前 session 已记录的 token 累计值。
 
 查看细分资源：
 
@@ -179,13 +189,13 @@ curl -N http://localhost:8080/api/runs/<run_id>/events
 ## 代码结构
 
 - `main.go`：根入口，只负责调用 Web 应用启动逻辑。
-- `internal/agent/types.go`：agent run、step、tool call、audit、policy、event、LLM tool calling、session runtime option 类型。
+- `internal/agent/types.go`：agent run、step、tool call、audit、policy、event、LLM tool calling、session runtime option 和 token usage 类型。
 - `internal/agent/policy.go`：可配置自主等级的最小 Policy Engine。
-- `internal/agent/store.go`：SQLite schema、session runtime options 和持久化查询。
+- `internal/agent/store.go`：SQLite schema、session runtime options、LLM token usage 和持久化查询。
 - `internal/agent/service.go`：runtime command 消费、斜杠命令处理、多轮 session 上下文组装、AI 对话 runtime、runtime event 发布。
 - `internal/agent/tools.go`：Tool Registry 和只读 filesystem 工具。
 - `internal/agent/web_tools.go`：Serper 搜索 provider 和独立 HTTP fetch 工具。
-- `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client，支持 native `tools/tool_calls`、普通 JSON 响应、streaming SSE delta 回调和最终聚合。
+- `internal/agent/llm.go`：OpenAI 兼容 Chat Completions client，支持 native `tools/tool_calls`、普通 JSON 响应、token usage 解析、streaming SSE delta 回调和最终聚合。
 - `internal/webapp/server.go`：路由注册和静态页面嵌入。
 - `internal/webapp/agent_api.go`：admin 页面和 run API。
 - `internal/webapp/assets/agent_admin.html`：管理员 Dashboard。

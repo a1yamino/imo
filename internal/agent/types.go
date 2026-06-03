@@ -116,18 +116,31 @@ type LLMDelta struct {
 	Content string `json:"content,omitempty"`
 }
 
+// LLMUsage is provider-reported token accounting for one model call. The
+// runtime stores only tokens for now; cost can be derived later from model
+// pricing without changing old run records.
+type LLMUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+	CachedTokens     int `json:"cached_tokens,omitempty"`
+	ReasoningTokens  int `json:"reasoning_tokens,omitempty"`
+}
+
 type LLMRequest struct {
 	SystemPrompt string
 	UserPrompt   string
 	Messages     []LLMMessage
 	Tools        []LLMToolSpec
 	Stream       bool
+	Usage        bool
 	OnDelta      func(LLMDelta)
 }
 
 type LLMResponse struct {
 	Content   string
 	ToolCalls []LLMToolCall
+	Usage     *LLMUsage
 }
 
 type LLMClient interface {
@@ -239,6 +252,27 @@ type Artifact struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// LLMUsageRecord keeps one durable token row per model call. A run can contain
+// multiple model calls when tools are involved, so usage is not stored on runs.
+type LLMUsageRecord struct {
+	ID        string    `json:"id"`
+	RunID     string    `json:"run_id"`
+	StepIndex int       `json:"step_index"`
+	Usage     LLMUsage  `json:"usage"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// LLMUsageSummary is the session-level token total shown by the dashboard.
+type LLMUsageSummary struct {
+	SessionID        string `json:"session_id"`
+	LLMCalls         int    `json:"llm_calls"`
+	PromptTokens     int    `json:"prompt_tokens"`
+	CompletionTokens int    `json:"completion_tokens"`
+	TotalTokens      int    `json:"total_tokens"`
+	CachedTokens     int    `json:"cached_tokens,omitempty"`
+	ReasoningTokens  int    `json:"reasoning_tokens,omitempty"`
+}
+
 // RunSnapshot is the read model for the admin dashboard. It intentionally
 // denormalizes related records so the UI can refresh a run with one request.
 type RunSnapshot struct {
@@ -255,6 +289,7 @@ type SessionSnapshot struct {
 	SessionID      string                `json:"session_id"`
 	Runs           []RunSnapshot         `json:"runs"`
 	RuntimeOptions SessionRuntimeOptions `json:"runtime_options"`
+	UsageSummary   LLMUsageSummary       `json:"usage_summary"`
 }
 
 // SessionRuntimeOptions are agent-runtime preferences scoped to a conversation.
@@ -263,6 +298,7 @@ type SessionSnapshot struct {
 type SessionRuntimeOptions struct {
 	SessionID string    `json:"session_id"`
 	Stream    bool      `json:"stream"`
+	Usage     bool      `json:"usage"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
