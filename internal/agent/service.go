@@ -318,18 +318,6 @@ func (s *RunService) runAgentLoop(ctx context.Context, run Run, messages []LLMMe
 				LLMMessage{Role: "user", Content: fmt.Sprintf("Tool result for %s: %s", decision.ToolName, observation)},
 			)
 		default:
-			if s.shouldRepromptForToolCall(run, messages, decision) {
-				s.logger.Warn("llm returned prose tool intent; reprompting for tool_call json",
-					"run_id", run.ID,
-					"session_id", run.SessionID,
-					"step_index", index,
-				)
-				messages = append(messages,
-					LLMMessage{Role: "assistant", Content: reply.Content},
-					LLMMessage{Role: "user", Content: toolIntentCorrectionPrompt()},
-				)
-				continue
-			}
 			summary := formatReasoning(decision)
 			response, err := s.store.AppendStep(ctx, Step{
 				RunID:            run.ID,
@@ -490,17 +478,22 @@ func (s *RunService) conversationMessages(ctx context.Context, run Run) ([]LLMMe
 
 func (s *RunService) systemPrompt(run Run) string {
 	var builder strings.Builder
-	builder.WriteString("You are a helpful assistant. ")
-	builder.WriteString("You may either answer normally or call one enabled tool. ")
-	builder.WriteString("Do not say you will use a tool; actually call it by returning the tool_call JSON. ")
-	builder.WriteString("Expose a concise, user-visible reasoning_trace with 2-5 short steps; do not include hidden chain-of-thought. ")
-	builder.WriteString(`When calling a tool, return only JSON: {"type":"tool_call","tool_name":"filesystem.list_dir","arguments":{"path":"."},"reasoning_summary":"why","reasoning_trace":["step 1","step 2"]}. `)
-	builder.WriteString(`When finished, return JSON: {"type":"final","content":"answer","reasoning_summary":"why","reasoning_trace":["step 1","step 2"]}.`)
+	builder.WriteString("You are the agent runtime decision model.\n")
+	builder.WriteString("Runtime contract:\n")
+	builder.WriteString("- Return exactly one JSON object. No Markdown fences, no prose outside JSON.\n")
+	builder.WriteString("- If the user request can be answered from conversation context alone, return a final JSON object.\n")
+	builder.WriteString("- If the request needs current, recent, external, web, sports, price, schedule, or unknown factual information, you MUST call an enabled tool instead of answering from memory.\n")
+	builder.WriteString("- If the request depends on local files, you MUST call a filesystem tool before claiming file contents.\n")
+	builder.WriteString("- Never promise future tool use. Do not say you will search, browse, inspect, or read; actually call the tool by returning tool_call JSON.\n")
+	builder.WriteString("- Use web.search for current or unknown web information. Use web.fetch when you have a URL and need the page contents. Use filesystem.list_dir before filesystem.read_file when the file path is unknown.\n")
+	builder.WriteString("- Include reasoning_summary and a concise, user-visible reasoning_trace with 2-5 short steps. Do not include hidden chain-of-thought.\n")
+	builder.WriteString(`Tool call shape: {"type":"tool_call","tool_name":"tool.name","arguments":{},"reasoning_summary":"why this tool is required","reasoning_trace":["step 1","step 2"]}.` + "\n")
+	builder.WriteString(`Final shape: {"type":"final","content":"answer","reasoning_summary":"why no tool is needed or how observations support the answer","reasoning_trace":["step 1","step 2"]}.`)
 	specs := s.tools.Specs()
 	if len(specs) == 0 || len(run.EnabledTools) == 0 {
 		return builder.String()
 	}
-	builder.WriteString(" Enabled tools:")
+	builder.WriteString("\nEnabled tools:")
 	for _, spec := range specs {
 		if toolEnabled(run.EnabledTools, spec.Name) {
 			builder.WriteString("\n- ")
@@ -509,7 +502,7 @@ func (s *RunService) systemPrompt(run Run) string {
 			builder.WriteString(spec.Description)
 			example := toolCallExample(spec.Name)
 			if example != "" {
-				builder.WriteString(" Example: ")
+				builder.WriteString("\n  Example: ")
 				builder.WriteString(example)
 			}
 		}
@@ -602,99 +595,6 @@ func formatReasoning(decision agentDecision) string {
 		builder.WriteString(fmt.Sprintf("%d. %s", i+1, item))
 	}
 	return builder.String()
-}
-
-func (s *RunService) shouldRepromptForToolCall(run Run, messages []LLMMessage, decision agentDecision) bool {
-	if decision.Type != "final" {
-		return false
-	}
-	if !toolEnabled(run.EnabledTools, "web.search") {
-		return false
-	}
-	if _, ok := s.tools.Get("web.search"); !ok {
-		return false
-	}
-	if hasToolObservation(messages, "web.search") {
-		return false
-	}
-	return containsSearchIntent(decision.Content)
-}
-
-func hasToolObservation(messages []LLMMessage, toolName string) bool {
-	prefix := "Tool result for " + toolName + ":"
-	for _, message := range messages {
-		if strings.Contains(message.Content, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func containsSearchIntent(content string) bool {
-	text := strings.ToLower(strings.TrimSpace(content))
-	if text == "" {
-		return false
-	}
-	if containsSearchNegation(text) {
-		return false
-	}
-	if strings.Contains(text, "搜索") || strings.Contains(text, "search") {
-		return true
-	}
-	phrases := []string{
-		"我需要搜索",
-		"我会搜索",
-		"我将搜索",
-		"我来搜索",
-		"联网搜索",
-		"上网搜索",
-		"网络搜索",
-		"实际搜索",
-		"搜索一下",
-		"搜索最新",
-		"查一下",
-		"查询一下",
-		"需要查询",
-		"最新实时",
-		"实时搜索",
-		"实时情况",
-		"请稍等",
-		"look up",
-		"search for",
-		"search the web",
-		"web search",
-		"browse the web",
-	}
-	for _, phrase := range phrases {
-		if strings.Contains(text, phrase) {
-			return true
-		}
-	}
-	return false
-}
-
-func containsSearchNegation(text string) bool {
-	negations := []string{
-		"不用搜索",
-		"不需要搜索",
-		"不要搜索",
-		"无需搜索",
-		"别搜索",
-		"do not search",
-		"don't search",
-		"no need to search",
-		"without search",
-	}
-	for _, phrase := range negations {
-		if strings.Contains(text, phrase) {
-			return true
-		}
-	}
-	return false
-}
-
-func toolIntentCorrectionPrompt() string {
-	return `You said you need to search, but you did not call the tool. Return only this JSON shape now: {"type":"tool_call","tool_name":"web.search","arguments":{"query":"the search query","max_results":5},"reasoning_summary":"why search is needed","reasoning_trace":["Identify the missing current information.","Use web.search to gather sources."]}`
 }
 
 func toolEnabled(enabled []string, name string) bool {

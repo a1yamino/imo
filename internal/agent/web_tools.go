@@ -34,7 +34,7 @@ type serperSearchTool struct {
 func (serperSearchTool) Spec() ToolSpec {
 	return ToolSpec{
 		Name:        "web.search",
-		Description: "Search the web with the configured search provider and return structured results.",
+		Description: "Use web.search for current, recent, unknown, factual, news, sports, price, schedule, or external web information. Arguments: query and optional max_results. Do not claim you searched unless this tool is called.",
 		Risk:        RiskLow,
 	}
 }
@@ -148,7 +148,7 @@ type webFetchTool struct {
 func (webFetchTool) Spec() ToolSpec {
 	return ToolSpec{
 		Name:        "web.fetch",
-		Description: "Fetch an HTTP(S) URL and return title, description, and readable text.",
+		Description: "Use web.fetch when you already have a specific HTTP(S) URL and need to read the source page before answering. Arguments: url and optional max_chars. Prefer web.search first when you do not have a URL.",
 		Risk:        RiskLow,
 	}
 }

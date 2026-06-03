@@ -76,7 +76,7 @@ type filesystemListDirTool struct{}
 func (filesystemListDirTool) Spec() ToolSpec {
 	return ToolSpec{
 		Name:        "filesystem.list_dir",
-		Description: "List entries in a directory under the run workspace scope.",
+		Description: "Use when you need to inspect available local files or directories before answering. Arguments: path, a relative directory path under workspace_scope. Do not use for web/current information.",
 		Risk:        RiskLow,
 	}
 }
@@ -124,7 +124,7 @@ type filesystemReadFileTool struct{}
 func (filesystemReadFileTool) Spec() ToolSpec {
 	return ToolSpec{
 		Name:        "filesystem.read_file",
-		Description: "Read a UTF-8 text file under the run workspace scope.",
+		Description: "Use when the answer depends on the contents of a known local file. Arguments: path, a relative file path under workspace_scope. Do not guess file contents; call this tool first.",
 		Risk:        RiskLow,
 	}
 }
